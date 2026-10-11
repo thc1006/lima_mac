@@ -107,10 +107,6 @@ vmOpts:
          - preset: sshd-full-disk-access
          - preset: lima-guestagent-full-disk-access
          - preset: terminal-accessibility
-         - service: kTCCServiceAccessibility
-           client: /opt/local/bin/cliclick
-           clientType: path
-           authValue: allow
 
 # suppressFirstLoginSetup moved from vmOpts.vz to osOpts.Darwin per upstream
 # maintainer feedback on lima-vm/lima#5186.

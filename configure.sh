@@ -97,14 +97,6 @@ main() {
             configure_autologin
             run_with_timeout 60 configure_screensaver || log_warn "configure_screensaver timed out or failed (non-fatal — see run_with_timeout comment)"
             ;;
-        wallpaper)
-            # Set login window and user desktop wallpaper, then pre-approve Terminal access.
-            # Bootstrap the setup-assistant suppressor early (non-fatal if GUI not ready yet).
-            local _sa_agent="$HOME/Library/LaunchAgents/com.lima.suppress-setup-assistant.plist"
-            [[ -f "$_sa_agent" ]] && launchctl bootstrap gui/"$(id -u)" "$_sa_agent" 2>/dev/null || true
-            configure_wallpaper
-            configure_terminal_access
-            ;;
         "")
             # Default: full provisioning run triggered by Lima at first boot.
             if ! [[ "$OSTYPE" == "darwin"* ]]; then
@@ -156,138 +148,8 @@ configure_screensaver() {
     # Disable App Nap (process throttling when app is not frontmost)
     defaults write NSGlobalDomain NSAppSleepDisabled -bool YES
 
-    # Enable Full Keyboard Access so Tab navigates all controls (including dialog buttons).
-    # Required for cliclick to deterministically reach the Allow button in TCC dialogs.
-    defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
 
     log_info "Screensaver, screen lock, and energy saver settings disabled"
-}
-
-# ── GUI Session Helpers ───────────────────────────────────────────────────────
-
-# Run a command inside the current user's Aqua GUI session.
-# Combines launchctl asuser (gui bootstrap namespace) with sudo -u (correct UID).
-# Required for anything that needs window server access: CGEventPost, osascript/Finder.
-# Ref: https://scriptingosx.com/2020/08/running-a-command-as-another-user/
-run_in_gui_session() {
-    sudo launchctl asuser "$(id -u)" sudo -u "$(whoami)" "$@"
-}
-
-# Bootstrap a temporary cliclick LaunchAgent in gui/<uid>.
-# The LaunchAgent sleeps $1 seconds then sends $2 as cliclick key arguments.
-# launchd spawns it with no sshd ancestor so CGEventPost reaches the GUI session.
-# Call _cliclick_bootout with the same label to clean up.
-# Usage: _cliclick_bootstrap <label> <sleep_secs> <cliclick_args>
-_cliclick_bootstrap() {
-    local _label="$1" _sleep="$2" _args="$3"
-    local _uid _script _plist
-    _uid=$(id -u)
-    _script="/tmp/lima-${_label}.sh"
-    _plist="/tmp/${_label}.plist"
-    printf '#!/bin/bash\nsleep %s && /opt/local/bin/cliclick %s\n' "$_sleep" "$_args" > "$_script"
-    chmod +x "$_script"
-    cat > "$_plist" << PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key><string>${_label}</string>
-    <key>ProgramArguments</key>
-    <array><string>/bin/bash</string><string>${_script}</string></array>
-    <key>RunAtLoad</key><true/>
-</dict>
-</plist>
-PLIST
-    sudo launchctl bootstrap gui/"$_uid" "$_plist" 2>/dev/null || true
-}
-
-_cliclick_bootout() {
-    local _label="$1" _uid
-    _uid=$(id -u)
-    launchctl bootout gui/"$_uid"/"$_label" 2>/dev/null || true
-    rm -f "/tmp/lima-${_label}.sh" "/tmp/${_label}.plist"
-}
-
-# ── Wallpaper ─────────────────────────────────────────────────────────────────
-
-configure_wallpaper() {
-    local wallpaper="/System/Library/Desktop Pictures/Solid Colors/Space Gray.png"
-    log_info "Setting wallpaper to Space Gray..."
-
-    # Login window wallpaper (no GUI session needed)
-    sudo defaults write /Library/Preferences/com.apple.loginwindow DesktopPicture "$wallpaper"
-
-    # User desktop wallpaper requires an active GUI session (Finder running).
-    # cliclick auto-approves the TCC dialog that appears when sshd-keygen-wrapper first
-    # contacts Finder via AppleEvents — it presses Return (the Allow button default) when
-    # UserNotificationCenter appears. Runs in gui/501 so CGEvents target the GUI session.
-    if pgrep -x Dock >/dev/null 2>&1; then
-        # Wait until the current user owns the console login session before triggering the
-        # TCC dialog. stat -f %Su /dev/console returns whoever holds the console session;
-        # once it matches our user the GUI session is established and ready to route key events.
-        local _console_user="" _waited=0 _current_user
-        _current_user=$(whoami)
-        while [[ "$_console_user" != "$_current_user" && $_waited -lt 120 ]]; do
-            _console_user=$(stat -f %Su /dev/console 2>/dev/null || true)
-            [[ "$_console_user" == "$_current_user" ]] && break
-            sleep 5; _waited=$((_waited + 5))
-        done
-        log_info "Console login session ready after ${_waited}s (console user: ${_console_user})"
-
-        _cliclick_bootstrap com.lima.cliclick-wallpaper 10 "kp:tab kp:return"
-
-        if run_in_gui_session osascript -e \
-            "tell application \"Finder\" to set desktop picture to POSIX file \"${wallpaper}\""; then
-            log_info "User desktop wallpaper configured"
-        else
-            log_warn "User desktop wallpaper skipped — Finder not responding (non-fatal)"
-        fi
-
-        _cliclick_bootout com.lima.cliclick-wallpaper
-    else
-        log_warn "No GUI session — user desktop wallpaper skipped (login window wallpaper set)"
-    fi
-
-    log_info "Wallpaper configured"
-}
-
-# ── Terminal AppleEvents Pre-Approval ────────────────────────────────────────
-
-configure_terminal_access() {
-    log_info "Pre-approving sshd-keygen-wrapper → Terminal AppleEvents access..."
-
-    # Idempotent: skip if already approved in the user TCC DB.
-    local _tcc_db="$HOME/Library/Application Support/com.apple.TCC/TCC.db"
-    if [[ -f "$_tcc_db" ]]; then
-        local _auth
-        _auth=$(sqlite3 "$_tcc_db" \
-            "SELECT auth_value FROM access WHERE service='kTCCServiceAppleEvents'
-             AND client='/usr/libexec/sshd-keygen-wrapper'
-             AND indirect_object_identifier='com.apple.Terminal';" 2>/dev/null || true)
-        if [[ "$_auth" == "2" ]]; then
-            log_info "Terminal AppleEvents access already approved — skipping"
-            return 0
-        fi
-    fi
-
-    if ! pgrep -x Dock >/dev/null 2>&1; then
-        log_warn "No GUI session — Terminal AppleEvents approval skipped"
-        return 0
-    fi
-
-    # kTCCServiceAppleEvents cannot be pre-seeded via disk patching (tccd rejects all
-    # external entries unconditionally). Trigger the consent dialog at runtime and approve
-    # it with a cliclick LaunchAgent — tccd then writes a genuine auth_reason=3 entry.
-    _cliclick_bootstrap com.lima.cliclick-terminal 10 "kp:tab kp:return"
-
-    if run_in_gui_session osascript -e \
-        'tell application "Terminal" to do script ""'; then
-        log_info "Terminal AppleEvents access approved"
-    else
-        log_warn "Terminal AppleEvents approval failed (non-fatal — approve manually if needed)"
-    fi
-
-    _cliclick_bootout com.lima.cliclick-terminal
 }
 
 # ── Setup Assistant Suppression ───────────────────────────────────────────────
@@ -717,24 +579,19 @@ configure_autologin() {
     # Security Agent context (macOS 15+, error:22 / EINVAL).
     sudo defaults write /Library/Preferences/com.apple.loginwindow autoLoginUser "$current_user"
 
-    if [[ -f /etc/kcpassword ]]; then
-        log_info "Auto-login enabled via sysadminctl"
-    else
-        # Attempt 2: manual fallback using bash + xxd.
-        # Required on macOS 15+ where sysadminctl error:22 prevents kcpassword creation
-        # (SACSetAutoLoginPassword requires a GUI/Security Agent context unavailable via SSH).
-        log_info "sysadminctl did not write kcpassword; using bash+xxd fallback"
-
-        # Validate the password is correct before writing kcpassword.
-        if ! /usr/bin/dscl /Search -authonly "$current_user" "$password_val" &>/dev/null; then
-            log_warn "Password in ~/password does not authenticate — kcpassword not written"
-            log_warn "Auto-login will not work; re-run configure.sh after correcting the password"
-            set -x
-            return 0
-        fi
-
-        _write_kcpassword "$password_val"
+    # Always (re)write kcpassword ourselves: a file left by Apple's guest provisioning or an
+    # earlier run holds the previous password, and sysadminctl above does not replace it
+    # without a Security Agent context. A stale kcpassword makes loginwindow refuse the
+    # automatic login ("Your password is required to log in").
+    # Validate the password first so a wrong one never gets written.
+    if ! /usr/bin/dscl /Search -authonly "$current_user" "$password_val" &>/dev/null; then
+        log_warn "Password in ~/password does not authenticate — kcpassword not written"
+        log_warn "Auto-login will not work; re-run configure.sh after correcting the password"
+        set -x
+        return 0
     fi
+
+    _write_kcpassword "$password_val"
 
     set -x
     log_info "Auto-login enabled — VM will log in as '$current_user' on next boot"
@@ -793,7 +650,9 @@ configure_password() {
     fi
     
     local old_password
+    set +x  # keep the password out of the xtrace log
     old_password=$(cat "$password_file")
+    set -x
     
     log_info "Setting password for user: $current_user"
     # Use sysadminctl -resetPasswordFor which works with Secure Token accounts.

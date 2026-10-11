@@ -184,12 +184,6 @@ main() {
     install_macports
     configure_macports
     selfupdate_macports
-    if [[ "${SKIP_CLICLICK:-0}" == "1" ]]; then
-        log_warn "SKIP_CLICLICK=1 — skipping cliclick install"
-    else
-        sudo /opt/local/bin/port install cliclick || \
-            log_warn "cliclick install failed (port requires full Xcode, not available on beta OS) — skipping"
-    fi
     configure_shell_profile
 
     log_info "MacPorts setup complete!"

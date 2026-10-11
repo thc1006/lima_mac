@@ -3,7 +3,7 @@
 #
 # Installs Xcode (optional) and Xcode Command Line Tools (required).
 # Run this before macports.sh — MacPorts source builds need CLT,
-# and certain MacPorts ports (cliclick, etc.) need full Xcode.
+# and certain MacPorts ports need full Xcode.
 #
 # Environment variables:
 #   XCODE_XIP   - filename of the Xcode .xip archive inside /Volumes/lima_mac/xcode/
@@ -31,7 +31,7 @@ XCODE_DIR="/Volumes/lima_mac/xcode"
 
 # ── Step 1: Xcode (optional) ───────────────────────────────────────────────────
 #
-# Xcode is needed for ports that use the xcode PortGroup (e.g. cliclick).
+# Xcode is needed for ports that use the xcode PortGroup.
 # It is installed from a .xip archive placed in the xcode/ directory of this repo.
 # Drop-in: copy an Xcode .xip into lima_mac/xcode/ and set XCODE_XIP to its filename.
 #

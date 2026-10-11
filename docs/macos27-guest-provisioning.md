@@ -9,9 +9,9 @@ takes over when host **and** guest are both macOS 27+.
 Companion doc: [ipsw-build-manifest.md](ipsw-build-manifest.md) — the guest-OS-version
 detection this feature depends on (the "PR 1" prerequisite).
 
-Status as of 2026-09-10: **blocked on installing macOS 27 on the build host**
-(expected week of 2026-09-15). API surface and design are settled; the native
-path can't be exercised until the host is on 27.
+Status as of 2026-10-07: **working end to end** in lima-devl P1 r6 (account `<host user>.guest`; first working build was r4 on 2026-10-05) (local only,
+forked Code-Hex/vz) — see "2026-10-05 Working end to end" below for findings and
+the Apple-vs-Lima mismatches.
 
 ---
 
@@ -199,6 +199,74 @@ plus a marker that native provisioning actually ran.
 - Docs: `website/content/en/docs/usage/guests/macos.md`.
 
 ---
+
+## 2026-10-05 Working end to end (lima-devl P1 r4)
+
+`make rebuild-27-custo` (macOS 27.0.1 `26A434` guest, macOS 27 host, lima-devl
+`2.3.0-dev.20261004_4`) completes. Setup Assistant creates the account from
+`VZMacGuestProvisioningOptions`; Lima adopts it. Verified in the guest: one user
+`blake` (uid 501, admin, home `/Users/blake`), provisioning password accepted and
+matching `~/password`, `autoLoginUser=blake`, Remote Login on, Lima SSH keys and
+passwordless sudo in place, both boots READY, clean desktop with no first-login
+screens.
+
+### How Apple's mechanism works (reverse-engineered, not documented)
+
+The docs and SDK headers only say the options apply "on the first boot after
+restore" via "the automated guest configuration protocol". What we found:
+
+- Host: `-[VZMacGuestProvisioningOptions _createSAFacelessUserConfiguration]` —
+  the options become a **Setup Assistant faceless user configuration**. The public
+  API sits on a generic private `_setGuestProvisioningOptions:forApplicationIdentifier:`.
+- Guest: the kernel publishes `AppleVirtualPlatformProvisioningMessenger` /
+  `AppleVirtualPlatformProvisioningService` (PCI) on every boot;
+  `AppleVirtualPlatformGuestProvisioningOptions` fetches the payload by application
+  identifier. **Setup Assistant is the consumer** — if it doesn't run, the options
+  are silently ignored (first test: options delivered, no effect at all).
+- Setup Assistant writes `/var/db/.AppleSetupDone` itself when it finishes.
+
+### Mismatches between Apple's model and Lima's macOS guest model
+
+| Area | Apple (guest provisioning) | Lima today | What P1 does |
+|------|----------------------------|------------|--------------|
+| Setup Assistant | Must run on first boot; it applies the options | Disk patch writes `.AppleSetupDone` + `.skipbuddy` so it never runs | Removes both markers after patching when provisioning is pending (r2) |
+| Who creates the user | Setup Assistant (faceless) | fakecloudinit `sysadminctl -addUser` | fakecloudinit waits for the account in directory services and adopts it; no `sysadminctl` (r3) |
+| Password | Host supplies it | Guest generates a random one, writes `~/password` | Provisioning password goes to cidata as a separate `guest-provisioning-password` file (not in `user-data`); fakecloudinit writes it to `~/password` (r3) |
+| Home directory | Always `/Users/<username>`; no API field to change it | `/Users/<user>.guest`, derived from the host username (avoids colliding with a host home mounted at `/Users/<user>`) | The **account name** is chosen so Apple's home equals Lima's usual one: with guest provisioning, `user.name` defaults to `<host user>.guest` and `user.home` to `/Users/{{.User}}` (set in `FillDefault`, r6). r4's cidata-level home override is gone. A dotted name is accepted by Apple (r5 tested `lima.<user>`, r6 `<user>.guest`). |
+| Later boots | Options never re-applied | "Already set up" = `/Users/<user>.guest` exists | Also treats an existing directory-services account as set up |
+| Auto-login / Remote Login | `logsInAutomatically` / `enablesRemoteLogin` | fakecloudinit enables sshd; lima_mac `configure.sh` handles auto-login | Both now come from Apple; fakecloudinit still loads sshd (harmless) |
+| Config surface | Five fields on one object | n/a | `osOpts.Darwin.guestProvisioning` keeps only `password`, `logsInAutomatically`, `enablesRemoteLogin`; username and full name come from `user.name` / `user.comment` (r5). lima_mac passes only the password (random per run, or `CUSTO_PASSWORD`). |
+
+Consequences to resolve before anything goes upstream (#5516):
+
+- **Host-home mount collision: avoided by naming.** The account is `<host user>.guest`,
+  so a host home mounted at `/Users/<host user>` no longer shadows it. (An explicit
+  `user.name` equal to the host user would reintroduce the clash.)
+- **Explicit `user.home` is rejected** unless it equals `/Users/<user.name>` (validation
+  added in r5), since the boot scripts need the home Setup Assistant creates.
+- **Who owns the account fields.** Username and full name now come from the Lima user
+  (r5), as #5516 suggests. The password is still configured, not generated by Lima.
+- **Password at rest:** plaintext in `lima.yaml` and on the cidata ISO, same exposure
+  as before.
+- **Leftover r1/r2-era behaviour:** `suppressFirstLoginSetup` still runs in the
+  adoption path; with Setup Assistant doing its own setup it may be unnecessary —
+  untested whether turning it off changes the first-login screens.
+- **configure.sh warnings (non-fatal) on this run:** user wallpaper skipped
+  ("Finder not responding") and Terminal AppleEvents approval failed — privacy
+  prompts for the new account, not provisioning failures.
+
+## 2026-10-08 Adopted for the regular macOS 27 VM
+
+The `macos-27-custo` test VM was folded into `macos-27`: `macos-27.yaml` now carries
+`osOpts.Darwin.guestProvisioning`, `make build-27` creates the VM with a random initial
+`PROVISION_PASSWORD` (kept in the guest's `~/password`; `configure.sh`
+`configure_password` replaces it with `MACOS_PASSWORD` from `.envrc` when that is set),
+and the `macOS_27_custo` runner, label and workflow input are gone. The VM is built the
+same way as 26/15: Lima/Apple provision the account, then `tools/macos-setup` customizes
+the disk from the host (wallpaper, screensaver, energy, TCC AppleEvents). Checked on a
+clean `make rebuild-27`: account `<user>.guest`, passwordless sudo, Finder and Terminal
+AppleEvents without a dialog, netatalk CI green on `macOS_27`. Not exercised: a
+non-empty `MACOS_PASSWORD` on top of a provisioned account.
 
 ## Open questions
 

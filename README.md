@@ -24,7 +24,6 @@ lima_mac/
   macports.sh        ← install Xcode CLT + MacPorts in the VM (run once, explicit)
   .envrc             ← local secrets (gitignored, copy from example.envrc)
   macos-26.yaml      ┐
-  macos-26-beta.yaml ├─ Lima VM configurations
   macos-15.yaml      ┘
 
 blakeports/
@@ -66,7 +65,6 @@ flowchart TD
 | Make target     | Lima instance   | Runner label    | macOS version          | Purpose               |
 |-----------------|-----------------|-----------------|------------------------|-----------------------|
 | `macos-26`      | `macos-26`      | `macOS_26`      | 26.4 Tahoe             | Current release       |
-| `macos-26-beta` | `macos-26-beta` | `macOS_26_beta` | 26.5 Dev Beta 1        | Beta track testing    |
 | `macos-15`      | `macos-15`      | `macOS_15`      | 15.6.1 Sequoia         | N-1 major release     |
 
 ---
@@ -120,7 +118,7 @@ limactl remove -f macos-26-test
 | Purpose | Patch validation | CI runner |
 | Provisioning | None | configure.sh + macports.sh |
 | Mounts | `~/` (default) | `~/Developer/lima_mac` |
-| TCC permissions | None | sshd, guestagent, terminal, cliclick |
+| TCC permissions | None | sshd, guestagent, terminal |
 | Resources | Lima defaults | 16 CPUs / 32 GiB / 128 GiB |
 | Disk format | Lima default (raw on ≤26, asif on 26+) | asif |
 
@@ -156,7 +154,6 @@ is already indexed (`portindex` only re-runs when sources change).
 
 ```bash
 make macos-26 && make run-26 && make macports-26 && make register-26
-make macos-26-beta && make run-26-beta && make macports-26-beta && make register-26-beta
 make macos-15 && make run-15 && make macports-15 && make register-15
 ```
 
@@ -196,10 +193,6 @@ Variables are sourced by `configure.sh` inside the VM at provision time via the
 | `run-26`            | Start macOS 26 VM                                                 |
 | `macports-26`       | Install Xcode CLT + MacPorts in macOS 26 VM (**run once**)        |
 | `clean-26`          | Force-stop and remove macOS 26 VM                                 |
-| `macos-26-beta`     | Create macOS 26 Beta VM                                           |
-| `run-26-beta`       | Start macOS 26 Beta VM                                            |
-| `macports-26-beta`  | Install Xcode CLT + MacPorts in macOS 26 Beta VM (**run once**)   |
-| `clean-26-beta`     | Force-stop and remove macOS 26 Beta VM                            |
 | `macos-15`          | Create macOS 15 VM                                                |
 | `run-15`            | Start macOS 15 VM                                                 |
 | `macports-15`       | Install Xcode CLT + MacPorts in macOS 15 VM (**run once**)        |
@@ -212,8 +205,6 @@ Variables are sourced by `configure.sh` inside the VM at provision time via the
 |---------------------|---------------------------------------------------|
 | `register-26`       | Register macOS 26 as GitHub Actions runner        |
 | `unregister-26`     | De-register macOS 26 runner (VM preserved)        |
-| `register-26-beta`  | Register macOS 26 Beta as GitHub Actions runner   |
-| `unregister-26-beta`| De-register macOS 26 Beta runner                  |
 | `register-15`       | Register macOS 15 as GitHub Actions runner        |
 | `unregister-15`     | De-register macOS 15 runner                       |
 

@@ -261,7 +261,7 @@ There are two copies of each VM config:
 
 When modifying templates, **also update the instance copy** or the running/next-start VM won't pick up the change. Lima reads from the instance copy.
 
-Active instances: `macos-26`, `macos-15`, `macos-26-upstream`, `macos-26-beta`.
+Active instances: `macos-27`, `macos-26`, `macos-15`.
 
 ---
 
@@ -295,7 +295,7 @@ configure.sh wallpaper  → sets wallpaper; requires Finder + Terminal Apple Eve
 configure.sh runner     → registers GitHub Actions runner
 ```
 
-Key make targets: `build-26`, `clean-26`, `rebuild-26` (same pattern for `-26-beta` and `-15`).
+Key make targets: `build-26`, `clean-26`, `rebuild-26` (same pattern for `-27`, `-15` and `-14`).
 
 ---
 

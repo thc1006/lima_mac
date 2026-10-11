@@ -25,7 +25,7 @@ minimumLimaVersion: "2.1.0"
 # ── Image ──────────────────────────────────────────────────────────────────────
 
 images:
-- location: "file:///Users/blake/Developer/lima_mac/ipsw/UniversalMac_26.6.2_25G83_Restore.ipsw"
+- location: "https://updates.cdn-apple.com/2026SummerFCS/fullrestores/140-75212/A2A24B94-1FC1-45A3-93F7-C51B02AF1F4D/UniversalMac_26.6.2_25G83_Restore.ipsw"
   arch: "aarch64"
 
 # macOS guests require VZ (Apple Virtualization.framework) — QEMU is not supported
@@ -108,10 +108,6 @@ vmOpts:
          - preset: sshd-full-disk-access
          - preset: lima-guestagent-full-disk-access
          - preset: terminal-accessibility
-         - service: kTCCServiceAccessibility
-           client: /opt/local/bin/cliclick
-           clientType: path
-           authValue: allow
 
 # suppressFirstLoginSetup moved from vmOpts.vz to osOpts.Darwin per upstream
 # maintainer feedback on lima-vm/lima#5186.
