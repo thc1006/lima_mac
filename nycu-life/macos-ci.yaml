@@ -1,0 +1,21 @@
+# nycu-life macOS / iOS CI runner — Lima guest template
+#
+# macOS 26.5 (build 25F71) guest, pinned to MATCH the host build so Lima's
+# "host macOS >= guest macOS" rule is satisfied (otherwise the guest fails to
+# boot with: VZErrorDomain Code=-9 "security error" / "Failed to create new HostKey").
+# The stock `template:macos-26` ships 26.5.2 (25F84) which is NEWER than our
+# 25F71 host -> do NOT use it here.
+#
+# Usage (host login keychain MUST be unlocked first — GUI/auto-login):
+#   limactl start --name=macos-ci --cpus=4 --memory=8 --disk=80 nycu-life/macos-ci.yaml
+#
+# Apple Software License: macOS users must have accepted the SLA on the host.
+
+images:
+- location: "https://updates.cdn-apple.com/2026SpringFCS/fullrestores/122-58869/DFB1CEEF-5619-4591-9924-E20DB2C8FED0/UniversalMac_26.5_25F71_Restore.ipsw"
+  arch: "aarch64"
+  digest: "sha256:fbaa50395763009b93af4125cad7fe87722b91d8b2576498c0d341a7a5171899"
+os: Darwin
+arch: aarch64
+# vz is the only supported VM type for macOS guests
+vmType: vz
