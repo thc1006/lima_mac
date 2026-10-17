@@ -77,10 +77,22 @@ macOS host (26.5 / 25F71, M4, 16 GB, FileVault OFF)
 - App Store Connect API key (only the `mobile-release` TestFlight lane).
 - GitHub App private key / runner registration tokens.
 
-## TODO / optimisation
-- **Reboot survival (full chain):** host boot → unlock keychain (LaunchDaemon) + `limactl start macos-ci`;
-  guest auto-login → runner as a LaunchAgent/service. (Runner currently started via `run.sh`.)
-- **Hygiene:** runner cleans the per-job workspace; for deeper isolation, periodically re-clone the
-  golden guest from a pristine snapshot (`limactl clone` is a full ~39 GB copy — not per-job viable).
-- **Signing/TestFlight:** import the signing cert per build; add the App Store Connect API key secret.
-- Org-level runner via the GitHub App; verify a full iOS *test* job (simulator boot) under the service.
+## Status — per-job ephemeral clone (DONE 2026-10-18)
+Hardened to **per-job ephemeral clones** (see `mac-ci-supervisor.sh` and
+`upstream/per-job-ephemeral-macos-ci.md`):
+- [x] Clean golden (Xcode-only; NO persistent runner identity, NO Apple ID session, NO secrets).
+- [x] `limactl clone` is **APFS CoW — instant, ~0 disk** (an earlier "39 GB full copy" assumption was wrong).
+- [x] Supervisor: detect queued job → CoW clone → JIT ephemeral runner → one job → destroy clone;
+      admission control (pause on recent HID input / low disk) + startup reconcile of orphan clones.
+- [x] Verified end-to-end: a full iOS job (`swift test` + simulator **boot**) ran inside a spawned
+      clone, then the clone was destroyed; the golden stayed untouched.
+
+### Remaining
+- **Scoped PAT:** supervisor reads `~/ci/.gh_token`; replace the user OAuth token with a non-expiring
+  fine-grained PAT (Actions:read + Administration:read/write on the repo).
+- **Reboot survival:** run the supervisor under launchd + a boot-time `security unlock-keychain`
+  (FileVault is off; auto-login already set).
+- **Wire super-app:** PR `ios-native` / `ios-ipad-ui` (and `mobile-release.ios`)
+  `runs-on: macos-26` → `nycu-life-macos`.
+- **Signing/TestFlight:** per-job temp keychain + App Store Connect API key (release lane only).
+- Org-level runner via the `nycu-life-action` GitHub App.
