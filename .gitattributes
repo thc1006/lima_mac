@@ -1,0 +1,4 @@
+# This IaC is edited on Windows but deployed to macOS. A shell script with CRLF
+# line endings breaks under bash on macOS ($'\r': command not found), so force LF.
+*.sh    text eol=lf
+*.bash  text eol=lf

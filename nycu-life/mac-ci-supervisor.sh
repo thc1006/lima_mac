@@ -35,13 +35,23 @@ human_active() {
   # actively typing. Only recent input (idle < IDLE_SECS) pauses CI admission.
   local idle
   idle=$(ioreg -c IOHIDSystem 2>/dev/null | awk -F= '/HIDIdleTime/{print int($2/1000000000); exit}')
-  [ -n "$idle" ] && [ "$idle" -lt "$IDLE_SECS" ]
+  [ -n "$idle" ] && [ "$idle" -lt "$IDLE_SECS" ] || return 1
+  # Ignore a low idle reading in the first IDLE_SECS after boot: right after auto-login the HID
+  # idle counter reads ~uptime, which would otherwise falsely pause CI for ~5 min after a reboot.
+  local now boot
+  now=$(date +%s); boot=$(sysctl -n kern.boottime 2>/dev/null | awk '{print $4}' | tr -d ',')  # field 4 = boot epoch sec
+  [ -n "$boot" ] && [ $((now - boot)) -gt "$IDLE_SECS" ]
 }
 host_unhealthy() {
   local g; g=$(df -g / | awk 'NR==2{print $4}')
   [ "${g:-99}" -lt "$MIN_FREE_GB" ]
 }
-unlock_keychain() { [ -f "$KC_PW_FILE" ] && security unlock-keychain -p "$(cat "$KC_PW_FILE")" "$KEYCHAIN" 2>/dev/null; }
+unlock_keychain() {
+  [ -f "$KC_PW_FILE" ] || return 1
+  security unlock-keychain -p "$(cat "$KC_PW_FILE")" "$KEYCHAIN"; local rc=$?
+  [ "$rc" = 0 ] || log "[unlock] FAILED rc=$rc"
+  return $rc
+}
 
 queued_macos_job() {
   # Must scan all NON-completed runs, not just status=queued: in a multi-job run the
@@ -84,6 +94,7 @@ provision_and_run() {
 
 log "supervisor starting (golden=$GOLDEN repo=$REPO label=$LABEL)"
 reconcile
+if unlock_keychain; then log "[startup] keychain unlocked"; fi   # unlock at startup too (reboot), not only per-job
 while true; do
   if host_unhealthy; then log "[admission] low disk — pause"; sleep 60; continue; fi
   if human_active;  then log "[admission] human active — pause"; sleep 60; continue; fi

@@ -39,6 +39,18 @@ limactl start <macos-guest>
 An interactive GUI login (or auto-login) also unlocks it, and that unlock is then visible to an
 SSH-launched `limactl`.
 
+**The unlock is per *security session*, not a global file flag — unlock in the SAME process/session
+that runs `limactl start`.** Observed directly: a supervisor running under a `launchd` **LaunchAgent**
+calls `security unlock-keychain` and gets `rc=0`, yet a *separate* SSH session's
+`security show-keychain-info` still reports `User interaction is not allowed` (i.e. "locked"). This
+is misleading — it does **not** mean the unlock failed. Verified by starting from an explicitly
+**locked** keychain, then in **one** session doing `unlock-keychain` → `limactl clone` →
+`limactl start`: the macOS guest booted (`READY`, no `Code=-9`) in ~8 s, `sw_vers` worked, and the
+guest was destroyed. So the correct pattern for a headless runner is to unlock **in-process, right
+before** `limactl start` (as our supervisor does) — do **not** gate on a cross-session
+`show-keychain-info` check, and do **not** assume a GUI login is required for the keychain (it is
+not; auto-login is only needed to *load* a LaunchAgent).
+
 **Suggested upstream action.** For `vmType: vz` + `os: Darwin`, detect a locked login keychain
 and emit an actionable error ("login keychain is locked; run `security unlock-keychain` or use a
 GUI/auto-login session"), and add a note to the macOS-guest docs. The raw `Code=-9 /

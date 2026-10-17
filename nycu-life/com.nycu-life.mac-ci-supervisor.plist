@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent for the nycu-life macOS CI supervisor (reboot survival).
+  Install:
+    cp com.nycu-life.mac-ci-supervisor.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nycu-life.mac-ci-supervisor.plist
+    launchctl enable   gui/$(id -u)/com.nycu-life.mac-ci-supervisor
+    launchctl kickstart -k gui/$(id -u)/com.nycu-life.mac-ci-supervisor
+  Rides the auto-login GUI session (gui/$UID domain). The supervisor itself unlocks the
+  login keychain in-process (per-security-session), so a macOS CI guest boots even if the
+  GUI login did not unlock it — auto-login is only needed to LOAD this agent.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.nycu-life.mac-ci-supervisor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/thc1006/ci/mac-ci-supervisor.sh</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Standard</string>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/thc1006/ci/supervisor.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/thc1006/ci/supervisor.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/thc1006</string>
+    </dict>
+</dict>
+</plist>

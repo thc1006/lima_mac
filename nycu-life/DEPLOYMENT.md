@@ -37,6 +37,12 @@ macOS host (26.5 / 25F71, M4, 16 GB, FileVault OFF)
    Fix: unlock it. Either a GUI/auto-login session, or **over SSH**:
    `security unlock-keychain -p "$MAC_PASSWORD" ~/Library/Keychains/login.keychain-db`
    (works headless; the unlock is visible to the SSH-launched `limactl`). Linux guests are unaffected.
+   **The unlock is per security *session*** — do it in the SAME process that runs `limactl start`
+   (the supervisor does, right before cloning). A *separate* SSH `security show-keychain-info` may
+   still print "User interaction is not allowed" even though the guest boots fine — that check is
+   misleading; don't gate on it. A GUI login is NOT required for the keychain (auto-login is only
+   needed to load the LaunchAgent). Proven: from a locked keychain, in-session unlock → clone →
+   `limactl start` boots the guest in ~8 s with no `Code=-9`.
 3. **SIGTRAP on macOS-26 guests is fixed in Lima ≥ 2.2.0** (upstream PR #5036, thread-pinning).
    You do NOT need MacPorts `Lima.app`.
 4. **Auto-login (reboot survival):** `sysadminctl -autologin set` fails `error:22` on macOS 26.
@@ -87,11 +93,43 @@ Hardened to **per-job ephemeral clones** (see `mac-ci-supervisor.sh` and
 - [x] Verified end-to-end: a full iOS job (`swift test` + simulator **boot**) ran inside a spawned
       clone, then the clone was destroyed; the golden stayed untouched.
 
+## Reboot survival — launchd LaunchAgent (DONE 2026-10-18)
+The supervisor runs under a user **LaunchAgent** (`com.nycu-life.mac-ci-supervisor.plist` in this
+dir), `RunAtLoad` + `KeepAlive`, logging to `~/ci/supervisor.log`. Auto-login (gotcha #4) brings up
+the `gui/$UID` session that loads the agent; the supervisor then unlocks the keychain in-process
+(gotcha #2), so the keychain does **not** depend on the GUI login.
+```sh
+cp nycu-life/com.nycu-life.mac-ci-supervisor.plist ~/Library/LaunchAgents/
+U=$(id -u)
+launchctl bootstrap gui/$U ~/Library/LaunchAgents/com.nycu-life.mac-ci-supervisor.plist
+launchctl enable    gui/$U/com.nycu-life.mac-ci-supervisor
+launchctl kickstart -k gui/$U/com.nycu-life.mac-ci-supervisor
+launchctl print    gui/$U/com.nycu-life.mac-ci-supervisor | grep -E 'state =|pid ='
+```
+The supervisor calls `unlock_keychain` once at startup (logs `[startup] keychain unlocked`) and again
+before each clone, so it is CI-ready immediately after boot, not only when the first job lands.
+**Reboot-survival test — PASSED (two full `shutdown -r now` cycles, 2026-10-18):** SSH back in
+~35–42 s; `console_user=thc1006` (auto-login fired), LaunchAgent `state=running` at boot, log shows
+`[startup] keychain unlocked`, golden `macos-ci` intact/Stopped, zero orphan clones.
+Two issues the 1st reboot surfaced, fixed and **re-verified clean by the 2nd reboot**:
+- (a) for ~5 min post-boot the HID idle counter reads ~uptime, so admission briefly paused as "human
+  active" — fixed by gating `human_active` on uptime > `IDLE_SECS` (parse the boot epoch with
+  `sysctl -n kern.boottime | awk '{print $4}'`, NOT `sed 's/.*sec = .../'` which greedily grabs the
+  `usec`). 2nd reboot: `idle=50s uptime=58s → human_active=FALSE`, no false pause.
+- (b) `k3s`/`k3s-agent1` auto-started via **system LaunchDaemons**
+  `/Library/LaunchDaemons/io.lima-vm.daemon.k3s{,-agent1}.plist` (root, `RunAtLoad`,
+  `limactl start --foreground`) and came back Running (~8 GB), colliding with the 8 GB macOS CI guest
+  on the 16 GB host. Note `limactl start-at-login --enabled=false` does **not** touch these (different
+  mechanism — it reports "not registered"). Fix: `sudo launchctl bootout
+  system/io.lima-vm.daemon.k3s{,-agent1}` + moved the plists to `~/ci/disabled-launchdaemons/`
+  (reversible: move back + `sudo launchctl bootstrap system <plist>`). 2nd reboot confirmed k3s stays
+  Stopped. The arm64 ARC backup is meant to stay stopped.
+
 ### Remaining
-- **Scoped PAT:** supervisor reads `~/ci/.gh_token`; replace the user OAuth token with a non-expiring
-  fine-grained PAT (Actions:read + Administration:read/write on the repo).
-- **Reboot survival:** run the supervisor under launchd + a boot-time `security unlock-keychain`
-  (FileVault is off; auto-login already set).
+- **Scoped PAT (hardening, not a blocker):** the current `~/ci/.gh_token` is the user's `gho_` OAuth
+  token (scopes `repo, workflow, read:org`); it was **proven able to `generate-jitconfig`** on
+  super-app, so the runner works now. Replace it with a non-expiring fine-grained PAT
+  (Actions:read + Administration:read/write on the repo) to be least-privilege and non-expiring.
 - **Wire super-app:** PR `ios-native` / `ios-ipad-ui` (and `mobile-release.ios`)
   `runs-on: macos-26` → `nycu-life-macos`.
 - **Signing/TestFlight:** per-job temp keychain + App Store Connect API key (release lane only).
