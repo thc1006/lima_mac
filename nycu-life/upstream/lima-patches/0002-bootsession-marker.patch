@@ -1,0 +1,120 @@
+diff --git a/pkg/store/bootsession_marker_test.go b/pkg/store/bootsession_marker_test.go
+new file mode 100644
+index 00000000..d662ffb4
+--- /dev/null
++++ b/pkg/store/bootsession_marker_test.go
+@@ -0,0 +1,79 @@
++// SPDX-FileCopyrightText: Copyright The Lima Authors
++// SPDX-License-Identifier: Apache-2.0
++
++package store
++
++import (
++	"sync"
++	"sync/atomic"
++	"testing"
++	"time"
++)
++
++// TestWriteBootSessionMarkerAtomic runs concurrent writers and readers of the boot session marker
++// with a constant boot ID. Because the ID never changes, staleBootSession must never return true;
++// when it does, it read a truncated marker that an in-place write had momentarily emptied. The
++// in-place os.WriteFile implementation fails this test and the atomic rename implementation passes.
++func TestWriteBootSessionMarkerAtomic(t *testing.T) {
++	dir := t.TempDir()
++	const id = "01234567-89ab-cdef-0123-456789abcdef"
++	if err := writeBootSessionMarker(dir, id); err != nil {
++		t.Fatalf("seed marker: %v", err)
++	}
++
++	var (
++		wg       sync.WaitGroup
++		stop     = make(chan struct{})
++		reads    atomic.Int64
++		falsePos atomic.Int64
++	)
++	for range 4 {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for {
++				select {
++				case <-stop:
++					return
++				default:
++					if err := writeBootSessionMarker(dir, id); err != nil {
++						t.Errorf("writer: %v", err)
++						return
++					}
++				}
++			}
++		}()
++	}
++	for range 4 {
++		wg.Add(1)
++		go func() {
++			defer wg.Done()
++			for {
++				select {
++				case <-stop:
++					return
++				default:
++					stale, err := staleBootSession(dir, id)
++					if err != nil {
++						t.Errorf("reader: %v", err)
++						return
++					}
++					reads.Add(1)
++					if stale {
++						falsePos.Add(1)
++					}
++				}
++			}
++		}()
++	}
++	time.Sleep(time.Second)
++	close(stop)
++	wg.Wait()
++
++	if reads.Load() == 0 {
++		t.Fatal("no reads happened")
++	}
++	if n := falsePos.Load(); n != 0 {
++		t.Errorf("staleBootSession reported a previous boot %d of %d times while the boot ID was constant", n, reads.Load())
++	}
++}
+diff --git a/pkg/store/pidfile.go b/pkg/store/pidfile.go
+index 781b8d4e..18ade144 100644
+--- a/pkg/store/pidfile.go
++++ b/pkg/store/pidfile.go
+@@ -106,7 +106,29 @@ func staleBootSession(dir, current string) (bool, error) {
+ }
+ 
+ func writeBootSessionMarker(dir, id string) error {
+-	return os.WriteFile(filepath.Join(dir, filenames.BootSession), []byte(id+"\n"), 0o644)
++	// Publish the marker atomically. os.WriteFile truncates the existing file before writing
++	// its new contents, so a concurrent staleBootSession could read an empty marker, find it
++	// does not equal the current boot ID, and wrongly report the PID files as stale. Writing
++	// to a uniquely named temporary file and renaming it into place closes that window: a
++	// reader sees either the old marker or the new one, never a truncated one.
++	f, err := os.CreateTemp(dir, "boot-session-*.tmp")
++	if err != nil {
++		return err
++	}
++	tmp := f.Name()
++	defer func() { _ = os.Remove(tmp) }()
++	if err := f.Chmod(0o644); err != nil {
++		_ = f.Close()
++		return err
++	}
++	if _, err := f.WriteString(id + "\n"); err != nil {
++		_ = f.Close()
++		return err
++	}
++	if err := f.Close(); err != nil {
++		return err
++	}
++	return os.Rename(tmp, filepath.Join(dir, filenames.BootSession))
+ }
+ 
+ func removePIDFiles(dir string) error {

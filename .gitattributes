@@ -2,3 +2,5 @@
 # line endings breaks under bash on macOS ($'\r': command not found), so force LF.
 *.sh    text eol=lf
 *.bash  text eol=lf
+# .patch files are applied to LF repos (e.g. lima-vm/lima); keep them LF.
+*.patch text eol=lf
