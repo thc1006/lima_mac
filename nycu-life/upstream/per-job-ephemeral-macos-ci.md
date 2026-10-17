@@ -62,9 +62,23 @@ token lifecycle to manage, and nothing left in the (discarded) clone.
 
 ## Operational notes (not upstream, but for operators)
 - Use a **scoped, non-expiring PAT** for the supervisor (Actions:read + Administration:read/write on
-  the repo), not a user OAuth token (broad + it expires).
-- Keep the host login keychain unlocked across reboots (auto-login, or a boot-time
-  `security unlock-keychain`), and run the supervisor under launchd for reboot survival.
+  the repo), not a user OAuth token (broad + it expires). A `repo`+`workflow` OAuth token also works
+  for `generate-jitconfig` if you must — but it expires and is over-broad.
+- **Reboot survival (verified here by 2× real `shutdown -r now`):** run the supervisor under a launchd
+  **LaunchAgent** (`RunAtLoad` + `KeepAlive`). Auto-login brings up the `gui/$UID` session that loads
+  the agent; the supervisor unlocks the login keychain **in-process** (per security-session — see
+  guest-findings #1), so it does **not** depend on the GUI login having unlocked the keychain.
+- **Admission control right after a reboot:** immediately after auto-login the HID idle counter reads
+  ≈ uptime, so a naive "pause while HID idle < N" check **falsely pauses CI for the first N seconds**.
+  Gate it on `uptime > N` as well — and parse the boot epoch with
+  `sysctl -n kern.boottime | awk '{print $4}'`, NOT a greedy `sed 's/.*sec = .../'` (that grabs the
+  `usec`).
+- **Shared-host RAM:** another auto-starting heavy VM will fight the macOS guest (a 16 GB host runs
+  **one** at a time). In particular, a Lima instance can auto-start at boot via a root
+  `/Library/LaunchDaemons/io.lima-vm.daemon.<name>.plist` (`RunAtLoad`, `limactl start <name>
+  --foreground`) that **`limactl start-at-login --enabled=false` does not manage** — the CLI reports
+  "not registered" because it only touches the per-user login agent, a different mechanism. Disable the
+  boot daemon with `sudo launchctl bootout system/io.lima-vm.daemon.<name>` and remove/move the plist.
 - Pin everything: Lima version, the IPSW build, the Xcode version. Rebuild the golden on updates.
 
 *Validated 2026-10-18: Lima v2.2.0, macOS 26.5 guest, Xcode 26.6 (17F113), iOS 26.5 Simulator.*

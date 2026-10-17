@@ -130,7 +130,9 @@ Two issues the 1st reboot surfaced, fixed and **re-verified clean by the 2nd reb
   token (scopes `repo, workflow, read:org`); it was **proven able to `generate-jitconfig`** on
   super-app, so the runner works now. Replace it with a non-expiring fine-grained PAT
   (Actions:read + Administration:read/write on the repo) to be least-privilege and non-expiring.
-- **Wire super-app:** PR `ios-native` / `ios-ipad-ui` (and `mobile-release.ios`)
-  `runs-on: macos-26` → `nycu-life-macos`.
+- **Wire super-app:** draft PR **nycu-life/super-app#105** opened — `ci.yml` `ios-native` +
+  `ios-ipad-ui` `runs-on: macos-26` → `nycu-life-macos` (release lane `mobile-release.ios` left on
+  `macos-26` until signing is set up). The PR's own `pull_request` run exercises the runner end-to-end;
+  confirmed the supervisor auto-picks-up the real `Native iOS` job into a per-job clone. Team reviews/merges.
 - **Signing/TestFlight:** per-job temp keychain + App Store Connect API key (release lane only).
 - Org-level runner via the `nycu-life-action` GitHub App.
