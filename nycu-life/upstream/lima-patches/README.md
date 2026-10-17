@@ -1,7 +1,9 @@
 # Two fixes for lima-vm/lima
 
-Two independent bugs in lima-vm/lima, each as a `git am`-ready patch with a
-regression test. Send them as two separate PRs.
+Two independent bugs in lima-vm/lima, each fixed with a regression test. Opened
+upstream as **PR #5641** (plist XML escaping) and **PR #5642** (boot-session
+marker); the `autostart disable` gaps are **issue #5643**. The `git am`-ready
+patches below are kept for reference and re-use.
 
 Both were checked against lima-vm/lima at `f47461ed` on macOS (Go 1.25.3): each
 test fails on the current tree and passes with the patch, `go build ./...` and
@@ -22,7 +24,7 @@ go test ./pkg/textutil/ ./pkg/autostart/... ./pkg/store/
 
 Then the same for `0002-...` on its own branch.
 
-## 1 — launchd plists: escape every value
+## 1 — launchd plists: escape every value (PR #5641)
 
 `0001-fix-autostart-escape-dynamic-values-in-launchd-plist.patch`. PR description:
 
@@ -34,7 +36,7 @@ Then the same for `0002-...` on its own branch.
 >
 > Checked on macOS, Go 1.25.3: `go test ./pkg/textutil/ ./pkg/autostart/... ./pkg/store/` passes under `-race`; `go build ./...` and `go vet` are clean; `plutil -lint` rejects the current output and accepts the escaped output.
 
-## 2 — boot-session marker: write it atomically
+## 2 — boot-session marker: write it atomically (PR #5642)
 
 `0002-fix-store-write-the-boot-session-marker-atomically.patch`. PR description:
 
@@ -51,7 +53,7 @@ Then the same for `0002-...` on its own branch.
 Reproduced in the same tree, not patched here — each needs a design decision or
 hardware this set doesn't cover.
 
-- **`autostart disable` can leave the boot LaunchDaemon behind.** In
+- **`autostart disable` can leave the boot LaunchDaemon behind — filed as issue #5643.** In
   `cmd/limactl/autostart_darwin.go`, `autostartDisableAction` returns right after
   removing a LaunchAgent, so an instance that has both a login agent and a boot
   daemon keeps the daemon. It also needs `store.Inspect` to succeed, so a deleted
