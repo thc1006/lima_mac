@@ -36,6 +36,13 @@ job is still `queued` waiting for the label. Polling only `status=queued` **runs
 those macOS jobs. Correct: list runs with `status != completed` and look for jobs with
 `status=queued` whose `.labels` include your runner label.
 
+And the match must be a genuinely NON-EMPTY result. `jq '...job name...' | head -1 && return 0` is a
+trap: `head` exits 0 even with no input, so the poll reports "job found" for the first in-progress run
+even when no matching job is queued there. That provisions a **phantom clone + JIT runner that idles
+`Listening for Jobs` forever and blocks the supervisor**. Capture the output and test it:
+`out=$(gh ... | jq '...' | head -1); [ -n "$out" ] && return 0`. (Seen in practice as soon as an
+unrelated in-progress run exists, e.g. a second PR whose jobs target GitHub-hosted runners.)
+
 ### B. Injecting the Apple ID 2FA code into `xcodes` in a headless guest
 `xcodes install <ver>` needs Apple ID + an interactive 2FA code. In a headless guest:
 - `screen -X stuff "<code>\n"` does **not** reach xcodes's secure prompt read (tried CR and LF).

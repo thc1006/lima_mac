@@ -57,11 +57,15 @@ queued_macos_job() {
   # Must scan all NON-completed runs, not just status=queued: in a multi-job run the
   # Linux jobs make the run "in_progress" while the iOS job is still "queued" waiting
   # for our label. Looking only at queued runs would miss (and strand) those iOS jobs.
-  local rid
+  # Capture the jq output and match only when NON-EMPTY. `... | head -1 && return 0` is wrong:
+  # head always exits 0, so it returns "found" for the first in-progress run even when NO
+  # nycu-life-macos job is queued there -> provisions a phantom clone that idles forever.
+  local rid out
   for rid in $(gh_api "repos/$REPO/actions/runs?per_page=40" \
                  --jq '.workflow_runs[]|select(.status!="completed")|.id' 2>/dev/null); do
-    gh_api "repos/$REPO/actions/runs/$rid/jobs" \
-      --jq ".jobs[]|select(.status==\"queued\")|select((.labels//[])|index(\"$LABEL\"))|.name" 2>/dev/null | head -1 && return 0
+    out=$(gh_api "repos/$REPO/actions/runs/$rid/jobs" \
+            --jq ".jobs[]|select(.status==\"queued\")|select((.labels//[])|index(\"$LABEL\"))|.name" 2>/dev/null | head -1)
+    [ -n "$out" ] && { echo "$out"; return 0; }
   done
   return 1
 }
