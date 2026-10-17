@@ -1,3 +1,25 @@
+From 4f5291de3a1b83d975929fcdb6c226a16f4765bd Mon Sep 17 00:00:00 2001
+From: thc1006 <84045975+thc1006@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 06:03:38 +0800
+Subject: [PATCH 1/2] fix(autostart): escape dynamic values in launchd plists
+
+The plist templates escaped only PATH; Instance, LimaHome, Binary, WorkDir
+and UserName went into the XML raw. A path containing & or < then renders a
+plist that is not well-formed: plutil rejects it, so launchd will not load it.
+
+Add an xml template function (encoding/xml, rejecting invalid UTF-8 rather
+than substituting U+FFFD) and use it for every value in both templates.
+ExecuteTemplate now registers the FuncMap, so both plist renderers use it.
+
+Signed-off-by: thc1006 <84045975+thc1006@users.noreply.github.com>
+---
+ .../io.lima-vm.autostart.INSTANCE.plist       | 12 ++--
+ .../launchd/io.lima-vm.daemon.INSTANCE.plist  | 14 ++--
+ pkg/autostart/launchd/plist_xml_test.go       | 68 +++++++++++++++++++
+ pkg/textutil/textutil.go                      | 21 +++++-
+ 4 files changed, 100 insertions(+), 15 deletions(-)
+ create mode 100644 pkg/autostart/launchd/plist_xml_test.go
+
 diff --git a/pkg/autostart/launchd/io.lima-vm.autostart.INSTANCE.plist b/pkg/autostart/launchd/io.lima-vm.autostart.INSTANCE.plist
 index e2ff6216..c25ef483 100644
 --- a/pkg/autostart/launchd/io.lima-vm.autostart.INSTANCE.plist
@@ -203,3 +225,6 @@ index 29d4d1bd..4ee77197 100644
  }
  
  // FuncHelp is help for TemplateFuncMap.
+-- 
+2.51.2
+

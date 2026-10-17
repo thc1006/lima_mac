@@ -1,3 +1,23 @@
+From 8a12cbb007e7760ecbe7be74ce7486aa37eaffca Mon Sep 17 00:00:00 2001
+From: thc1006 <84045975+thc1006@users.noreply.github.com>
+Date: Sun, 18 Oct 2026 06:03:38 +0800
+Subject: [PATCH 2/2] fix(store): write the boot session marker atomically
+
+writeBootSessionMarker used os.WriteFile, which truncates the existing marker
+before writing it again. A concurrent staleBootSession can read the empty
+file, decide the boot ID differs, and report the current boot's PID files as
+stale -- at which point WritePIDFile deletes them.
+
+Write the marker to a uniquely named temporary file and rename it into place,
+so a reader always sees a complete marker, old or new.
+
+Signed-off-by: thc1006 <84045975+thc1006@users.noreply.github.com>
+---
+ pkg/store/bootsession_marker_test.go | 79 ++++++++++++++++++++++++++++
+ pkg/store/pidfile.go                 | 24 ++++++++-
+ 2 files changed, 102 insertions(+), 1 deletion(-)
+ create mode 100644 pkg/store/bootsession_marker_test.go
+
 diff --git a/pkg/store/bootsession_marker_test.go b/pkg/store/bootsession_marker_test.go
 new file mode 100644
 index 00000000..d662ffb4
@@ -118,3 +138,6 @@ index 781b8d4e..18ade144 100644
  }
  
  func removePIDFiles(dir string) error {
+-- 
+2.51.2
+
