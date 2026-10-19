@@ -136,3 +136,43 @@ Two issues the 1st reboot surfaced, fixed and **re-verified clean by the 2nd reb
   confirmed the supervisor auto-picks-up the real `Native iOS` job into a per-job clone. Team reviews/merges.
 - **Signing/TestFlight:** per-job temp keychain + App Store Connect API key (release lane only).
 - Org-level runner via the `nycu-life-action` GitHub App.
+
+## 2026-10-19 reliability hardening (merge-night root causes)
+
+Re-apply all three when rebuilding the golden/supervisor.
+
+### 1. lima macOS-guest boot race — `/var/run/lima-boot-done` never written (THE clone-start blocker)
+`cidata` is a cd9660 ISO macOS auto-mounts ASYNCHRONOUSLY (DiskArbitration). The one-shot LaunchDaemon
+`io.lima-vm.lima-macos-init` (`RunAtLoad`, no `KeepAlive`) ran `/usr/local/sbin/lima-macos-init.sh`,
+which only checked the `/Volumes/cidata` DIRECTORY then `exec`d `lima-guestagent`. On a fast clone boot
+it won the race vs the mount -> `No such file or directory` -> the one-shot daemon died, never retried
+-> `boot.sh` never ran -> marker never written -> `limactl start` hung on "boot scripts must have
+finished". Clone-start success was ~12%.
+
+FIX (inside the golden guest, as root; then stop the golden so clones inherit it):
+- Rewrite `/usr/local/sbin/lima-macos-init.sh` to bounded-wait for the real binary:
+```sh
+#!/bin/sh
+set -eux
+date
+n=0
+until [ -x /Volumes/cidata/lima-guestagent ]; do
+  n=$((n+1)); [ "$n" -ge 60 ] && { echo "cidata/lima-guestagent not available after 60s" >&2; exit 1; }
+  sleep 1
+done
+exec /Volumes/cidata/lima-guestagent fake-cloud-init
+```
+- Add self-heal to `/Library/LaunchDaemons/io.lima-vm.lima-macos-init.plist`:
+  `<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>`
+
+After the fix clone-start is ~100% (~10s). Raising the golden cpu makes clones boot FASTER and lose the
+race MORE, so only raise cpu after this fix is in.
+
+### 2. supervisor zombie-clone death-spiral
+`cleanup`/`reconcile` used `limactl stop`/`delete` WITHOUT `-f`; a timed-out start left a half-running VM
+that bare `delete` refuses to remove -> zombie `macos-job-*` clones piled up, ate RAM (2x10GiB -> host
+swap-thrash), starved the next start -> deadlock. FIX: `-f` on every `limactl stop`/`delete` (now in
+mac-ci-supervisor.sh) + `limactl start --timeout 90s` so a lost boot-race fails fast and retries.
+
+### 3. golden resources
+`cpus: 8`, `memory: 10GiB` in the golden `~/.lima/macos-ci/lima.yaml` (safe once fix #1 is in).

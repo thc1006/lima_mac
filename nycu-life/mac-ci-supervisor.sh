@@ -74,7 +74,7 @@ reconcile() {
   local inst
   for inst in $(limactl list --format '{{.Name}}' 2>/dev/null | grep '^macos-job-'); do
     log "[reconcile] destroying orphan $inst"
-    limactl stop "$inst" 2>/dev/null; limactl delete "$inst" 2>/dev/null
+    limactl stop -f "$inst" 2>/dev/null; limactl delete -f "$inst" 2>/dev/null
   done
 }
 
@@ -85,15 +85,15 @@ provision_and_run() {
   log "[provision] clone $GOLDEN -> $inst (CoW)"
   limactl clone "$GOLDEN" "$inst" >/dev/null 2>&1 || { log "clone failed"; return 1; }
   unlock_keychain
-  limactl start "$inst" >/dev/null 2>&1 || { log "start failed"; limactl delete "$inst" 2>/dev/null; return 1; }
+  limactl start --timeout 90s "$inst" >/dev/null 2>&1 || { log "start failed"; limactl delete -f "$inst" 2>/dev/null; return 1; }
   jit=$(gh_api -X POST "repos/$REPO/actions/runners/generate-jitconfig" \
         -f name="$inst" -F runner_group_id=1 -f "labels[]=$LABEL" -f work_folder=_work \
         --jq '.encoded_jit_config' 2>/dev/null)
-  if [ -z "$jit" ]; then log "jitconfig failed"; limactl stop "$inst" 2>/dev/null; limactl delete "$inst" 2>/dev/null; return 1; fi
+  if [ -z "$jit" ]; then log "jitconfig failed"; limactl stop -f "$inst" 2>/dev/null; limactl delete -f "$inst" 2>/dev/null; return 1; fi
   log "[run] one job in $inst"
   limactl shell "$inst" -- bash -lc "cd ~/actions-runner && ./run.sh --jitconfig '$jit'" 2>&1 | sed "s/^/  [$inst] /"
   log "[cleanup] destroy $inst"
-  limactl stop "$inst" 2>/dev/null; limactl delete "$inst" 2>/dev/null
+  limactl stop -f "$inst" 2>/dev/null; limactl delete -f "$inst" 2>/dev/null
 }
 
 log "supervisor starting (golden=$GOLDEN repo=$REPO label=$LABEL)"
