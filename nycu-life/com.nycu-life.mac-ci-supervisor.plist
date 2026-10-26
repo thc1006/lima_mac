@@ -6,7 +6,8 @@
     cp com.nycu-life.mac-ci-supervisor.plist ~/Library/LaunchAgents/
     launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nycu-life.mac-ci-supervisor.plist
     launchctl enable   gui/$(id -u)/com.nycu-life.mac-ci-supervisor
-    launchctl kickstart -k gui/$(id -u)/com.nycu-life.mac-ci-supervisor
+    For an installed service, follow DEPLOYMENT.md's drain procedure before
+    restarting. kickstart -k can terminate a live job and trigger reconciliation.
   Rides the auto-login GUI session (gui/$UID domain). The supervisor itself unlocks the
   login keychain in-process (per-security-session), so a macOS CI guest boots even if the
   GUI login did not unlock it — auto-login is only needed to LOAD this agent.

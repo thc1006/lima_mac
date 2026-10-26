@@ -25,9 +25,11 @@ KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 POLL="${POLL:-15}"
 MIN_FREE_GB="${MIN_FREE_GB:-15}"
 IDLE_SECS="${IDLE_SECS:-300}"
+DRAIN_FILE="${DRAIN_FILE:-$HOME/ci/maintenance.drain}"
 
 log() { echo "$(date '+%H:%M:%S') $*"; }
 gh_api() { GH_TOKEN="$(cat "$TOKEN_FILE")" gh api "$@"; }
+draining() { [ -e "$DRAIN_FILE" ] || [ -L "$DRAIN_FILE" ]; }
 
 human_active() {
   # "using the Mac" = recent physical HID input (keyboard/mouse). A logged-in-but-idle GUI
@@ -82,6 +84,8 @@ provision_and_run() {
   local id inst jit
   id=$(date +%Y%m%d%H%M%S)
   inst="macos-job-$id"
+  # Recheck after the GitHub lookup: maintenance may have begun during polling.
+  if draining; then log "[admission] drain — skip queued job"; return 0; fi
   log "[provision] clone $GOLDEN -> $inst (CoW)"
   limactl clone "$GOLDEN" "$inst" >/dev/null 2>&1 || { log "clone failed"; return 1; }
   unlock_keychain
@@ -97,9 +101,13 @@ provision_and_run() {
 }
 
 log "supervisor starting (golden=$GOLDEN repo=$REPO label=$LABEL)"
+# A maintenance request survives reboot. Do not reconcile or unlock anything
+# until the operator has verified the host and removed the request.
+while draining; do log "[admission] drain — startup paused"; sleep "$POLL"; done
 reconcile
 if unlock_keychain; then log "[startup] keychain unlocked"; fi   # unlock at startup too (reboot), not only per-job
 while true; do
+  if draining; then log "[admission] drain — idle"; sleep "$POLL"; continue; fi
   if host_unhealthy; then log "[admission] low disk — pause"; sleep 60; continue; fi
   if human_active;  then log "[admission] human active — pause"; sleep 60; continue; fi
   if queued_macos_job >/dev/null; then provision_and_run; else sleep "$POLL"; fi
