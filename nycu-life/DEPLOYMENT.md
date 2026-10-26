@@ -103,11 +103,59 @@ cp nycu-life/com.nycu-life.mac-ci-supervisor.plist ~/Library/LaunchAgents/
 U=$(id -u)
 launchctl bootstrap gui/$U ~/Library/LaunchAgents/com.nycu-life.mac-ci-supervisor.plist
 launchctl enable    gui/$U/com.nycu-life.mac-ci-supervisor
-launchctl kickstart -k gui/$U/com.nycu-life.mac-ci-supervisor
+# Drain an installed service before restarting it; see the procedure below.
 launchctl print    gui/$U/com.nycu-life.mac-ci-supervisor | grep -E 'state =|pid ='
 ```
 The supervisor calls `unlock_keychain` once at startup (logs `[startup] keychain unlocked`) and again
 before each clone, so it is CI-ready immediately after boot, not only when the first job lands.
+
+### Maintenance: drain before restarting
+
+Request a pause with `touch ~/ci/maintenance.drain`. The supervisor checks this
+before admitting another job and again after the GitHub lookup, before cloning.
+An already-admitted job continues through runner completion and clone cleanup.
+Observe a newly appended `[admission] drain — idle` line after the request
+(not an old match in `supervisor.log`) **and** confirm that no `macos-job-*` instance
+remains before stopping or restarting the service. The file check is not an atomic
+lock with clone creation; the presence of the request alone is not proof of idle.
+
+The request survives a host reboot. At startup it blocks reconciliation, keychain
+unlock and dispatch until removed. This prevents `RunAtLoad`/`KeepAlive` from
+resuming work before the upgraded host has been verified. Keep the existing golden
+stopped, check SSH and the intended toolchain, stop any candidate VM, then remove
+the request with `rm ~/ci/maintenance.drain` to resume. `DRAIN_FILE` follows the
+supervisor's existing environment-default convention for isolated test instances.
+
+The first deployment of this gate requires special care because the old process
+does not read the new script. Create the drain request first for the replacement
+script; its presence does not pause the old process. At an idle boundary, send `SIGSTOP` to only the
+supervisor service using `launchctl kill SIGSTOP gui/$(id -u)/com.nycu-life.mac-ci-supervisor`,
+then inspect that PID's process group and recheck the VM list over several polls.
+Use only `pid,ppid,pgid,stat,comm` fields when inspecting processes: full command
+arguments can expose the encoded JIT configuration. An in-flight provisioning
+child can create a VM after the parent stops. Require no live children other than
+`sleep` and no job clone; if a clone appeared, send `SIGCONT` and let it finish.
+Only after confirming idle should you `launchctl disable` the service and `bootout`.
+Confirm the service is unloaded and its old process group has exited. Install the
+reviewed script by writing a new file and atomically renaming it while unloaded;
+retain the old script and plist. Run `plutil -lint` on the plist. Use `launchctl enable`
+**before** `bootstrap`, with the drain request still present, then confirm new
+`startup paused` lines and no reconciliation or dispatch. Never use `kickstart -k`
+or restart the host to interrupt a busy runner: startup reconciliation deletes
+job clones. If drain cannot finish, inspect the runner; a JIT process waiting for
+a job has no timeout in the existing supervisor and must not be assumed idle.
+Keep the maintenance window below GitHub's 24-hour queued-job limit.
+
+For a toolchain canary, use an instance name outside `macos-job-*` and a label
+that does not include `nycu-life-macos`. A compound label containing that default
+label is seen by the production supervisor and can occupy its only VM slot.
+Keep production drained during the canary and run one heavy macOS VM at a time.
+The golden image is CI-image rollback, not a verified backup of the physical host.
+
+The drain loop can be exercised without real VMs or GitHub credentials on a POSIX
+host: `python3 nycu-life/tests/test_supervisor_drain.py`. The fixture runs the
+actual script with disposable command stubs; it does not change the live service.
+
 **Reboot-survival test — PASSED (two full `shutdown -r now` cycles, 2026-10-18):** SSH back in
 ~35–42 s; `console_user=thc1006` (auto-login fired), LaunchAgent `state=running` at boot, log shows
 `[startup] keychain unlocked`, golden `macos-ci` intact/Stopped, zero orphan clones.
