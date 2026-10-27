@@ -3,7 +3,7 @@
 Self-hosted GitHub Actions **macOS/iOS** runner for `github.com/nycu-life/super-app`,
 built on a **Lima** (CNCF) macOS guest on an Apple **M4 / 16 GB** Mac mini.
 
-Status: **working end-to-end** — a real GitHub Actions job (`runs-on: nycu-life-macos`) ran on
+Original image status (2026-10-18): **working end-to-end** — a real GitHub Actions job (`runs-on: nycu-life-macos`) ran on
 it and passed (Xcode 26.6 + iOS 26.5 Simulator verified). This doc records the recipe and the
 (many) gotchas so it can be re-built, maintained, and optimised.
 
@@ -18,7 +18,7 @@ it and passed (Xcode 26.6 + iOS 26.5 Simulator verified). This doc records the r
 - `agoda-com/macOS-vz-kubelet` (Virtual Kubelet) was validated as a k8s-native alternative but is
   experimental; Lima chosen for maturity.
 
-## Architecture
+## Original deployed image (2026-10-18)
 ```
 macOS host (26.5 / 25F71, M4, 16 GB, FileVault OFF)
 └─ Lima vz  ─ instance "macos-ci"  (macOS 26.5 / 25F71 guest)
@@ -26,6 +26,45 @@ macOS host (26.5 / 25F71, M4, 16 GB, FileVault OFF)
       └─ GitHub Actions runner "macos-ci" — label: nycu-life-macos
 ```
 16 GB ⇒ run **one heavy VM at a time** (the macOS guest OR the Linux k3s, never both under load).
+
+## Xcode 27.1 image revision (2026-10-27)
+
+The host and tested candidate now run macOS **26.7.2 / 25G332**. The candidate has
+**Xcode 27.1 / 27A9275**, Swift 6.4 and the **iOS 27.1 SDK**, selected by the
+workflow's explicit `/Applications/Xcode_27.1.app/Contents/Developer` path.
+The guest's default Xcode 26.6 and both installed Xcode applications are retained.
+Ordinary iPhone 17 Pro and iPad Pro 11-inch (M5) tests use **iOS 26.5 / 23F77**;
+iPhone Duo uses **iOS 27.1 / 24A94425**, whose actual supported device types exclude
+those ordinary devices. Duo boot/shutdown passed, as did the iPhone 17 Pro / iOS
+26.5 Debug state lane (493 tests). This does not establish OCR, full UI, full CI
+or Duo interaction acceptance.
+
+The LaunchAgent selects the new image name `macos-ci-xcode27-20261027` through the
+supervisor's existing **GOLDEN** input. Keep the original `macos-ci` stopped and its
+configuration/storage untouched for rollback. `macos-ci.yaml` remains the original
+26.5 bootstrap IPSW; the new image will be a stopped native clone of the updated,
+cleaned candidate, not a new IPSW download. The new image still needs creation and
+clone-smoke acceptance before this LaunchAgent revision is installed on the host.
+The existing repository, `nycu-life-macos` label, runner group and per-job JIT
+clone/run/delete lifecycle are unchanged.
+
+Keep maintenance drain in place while preparing the image. Retain host evidence,
+remove only verified provisioning scratch, and exclude private recovery backups
+from the new image while retaining the candidate's backups. Normal-stop the
+candidate, clone it to the new name without `--start`, and verify independent
+disk/vz-aux identities. Use one disposable clone to check boot, the exact toolchain
+and runtime matrix, and the unlocked guest session, then keep the new golden
+stopped. That smoke is separate from JIT/full-suite acceptance: queued super-app
+PR #215 supplies those results through the existing CI after admission resumes.
+
+Install the one-key LaunchAgent revision only at the drained idle boundary:
+back up the current plist, disable/bootout the idle service, atomically install a
+linted plist, then enable/bootstrap it with drain still present. Verify the new
+GOLDEN selection and fresh paused logs before resuming admission. To revert,
+request drain, let any admitted job finish and its clone disappear, then restore
+the backed-up plist through the same idle reload procedure; without its GOLDEN
+override, the existing supervisor selects `macos-ci`. Do not interrupt a live job
+or rename either golden to switch images. See the maintenance procedure below.
 
 ## Gotchas (read before touching anything)
 1. **host macOS must be ≥ guest macOS.** Otherwise the guest fails to boot with
