@@ -46,8 +46,29 @@ human_active() {
   [ -n "$boot" ] && [ $((now - boot)) -gt "$IDLE_SECS" ]
 }
 host_unhealthy() {
-  local g; g=$(df -g / | awk 'NR==2{print $4}')
-  [ "${g:-99}" -lt "$MIN_FREE_GB" ]
+  local report g
+  case "$MIN_FREE_GB" in
+    ''|*[!0-9]*) log "[admission] invalid disk threshold — pause"; return 0;;
+  esac
+  if [ "${#MIN_FREE_GB}" -gt 9 ]; then
+    log "[admission] invalid disk threshold — pause"; return 0
+  fi
+  # Check df itself before parsing: a pipeline can hide its failure. Keep -g
+  # alone; macOS -P selects 512-byte blocks even when combined with -g.
+  if ! report=$(LC_ALL=C df -g / 2>/dev/null); then
+    log "[admission] disk probe FAILED — pause"; return 0
+  fi
+  if ! g=$(printf '%s\n' "$report" | awk '
+    NR == 1 { valid = ($1 == "Filesystem" && $2 == "1G-blocks" && $4 == "Available"); next }
+    NR == 2 {
+      if (NF != 9 || $9 != "/" || $4 !~ /^[0-9]+$/ || length($4) > 9) valid = 0
+      available = $4
+    }
+    END { if (NR != 2 || !valid || available == "") exit 1; print available }
+  '); then
+    log "[admission] disk probe invalid — pause"; return 0
+  fi
+  [ "$g" -lt "$MIN_FREE_GB" ]
 }
 unlock_keychain() {
   [ -f "$KC_PW_FILE" ] || return 1
@@ -88,6 +109,7 @@ provision_and_run() {
   inst="macos-job-$id"
   # Recheck after the GitHub lookup: maintenance may have begun during polling.
   if draining; then log "[admission] drain — skip queued job"; return 0; fi
+  if host_unhealthy; then log "[admission] low or unknown disk — skip queued job"; return 0; fi
   log "[provision] clone $GOLDEN -> $inst (CoW)"
   limactl clone "$GOLDEN" "$inst" >/dev/null 2>&1 || { log "clone failed"; return 1; }
   unlock_keychain
@@ -134,7 +156,7 @@ reconcile
 if unlock_keychain; then log "[startup] keychain unlocked"; fi   # unlock at startup too (reboot), not only per-job
 while true; do
   if draining; then log "[admission] drain — idle"; sleep "$POLL"; continue; fi
-  if host_unhealthy; then log "[admission] low disk — pause"; sleep 60; continue; fi
+  if host_unhealthy; then log "[admission] low or unknown disk — pause"; sleep 60; continue; fi
   if human_active;  then log "[admission] human active — pause"; sleep 60; continue; fi
   if queued_macos_job >/dev/null; then
     if provision_and_run; then :; else

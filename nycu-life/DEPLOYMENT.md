@@ -5,6 +5,14 @@ Pre-cutover image maintenance uses the opt-in
 admission when a phase fails and safe recovery is proven. A recovered failed
 phase keeps its nonzero exit code; no automatic live installation is implied.
 
+The repository supervisor also pauses new admission when the native disk probe
+fails, its GiB output is malformed or ambiguous, or `MIN_FREE_GB` is invalid.
+It checks again after the GitHub queue lookup, before cloning or unlocking.
+The default 15 GiB threshold is unchanged. This is source behavior until the
+reviewed supervisor is installed; it neither changes GitHub job conclusions
+nor replaces the maintenance recovery boundary. Offline failure tests are in
+`nycu-life/tests/test_supervisor_disk_admission.py`.
+
 Self-hosted GitHub Actions **macOS/iOS** runner for `github.com/nycu-life/super-app`,
 built on a **Lima** (CNCF) macOS guest on an Apple **M4 / 16 GB** Mac mini.
 
