@@ -74,7 +74,10 @@ or rename either golden to switch images. See the maintenance procedure below.
 2. **Headless/SSH leaves the login keychain LOCKED, and `vz` needs it UNLOCKED** to create the
    guest's HostKey — same `Code=-9` error even when host==guest. THE real blocker (not version).
    Fix: unlock it. Either a GUI/auto-login session, or **over SSH**:
-   `security unlock-keychain -p "$MAC_PASSWORD" ~/Library/Keychains/login.keychain-db`
+   `security unlock-keychain ~/Library/Keychains/login.keychain-db`
+   and enter the password at its native prompt. For unattended supervisor use,
+   `unlock-keychain.py` answers that prompt through a private PTY; no password is
+   passed in process arguments or environment variables.
    (works headless; the unlock is visible to the SSH-launched `limactl`). Linux guests are unaffected.
    **The unlock is per security *session*** — do it in the SAME process that runs `limactl start`
    (the supervisor does, right before cloning). A *separate* SSH `security show-keychain-info` may
@@ -145,6 +148,15 @@ launchctl enable    gui/$U/com.nycu-life.mac-ci-supervisor
 # Drain an installed service before restarting it; see the procedure below.
 launchctl print    gui/$U/com.nycu-life.mac-ci-supervisor | grep -E 'state =|pid ='
 ```
+Install `unlock-keychain.py` beside `~/ci/mac-ci-supervisor.sh` when replacing the
+supervisor at a drained, idle boundary. It requires the host's existing Python 3
+and uses only its standard library. Keep `~/ci/.kc_pw` a regular, owner-only file
+(mode `600` or `400`, one link, at most 1024 bytes); symlinks, changed metadata,
+embedded terminal control characters and empty passwords fail closed. The helper
+allows one prompt response within 15 seconds, discards native output and reports
+only a generic failure. It inherits the supervisor's security audit session and
+does not change keychain settings, the default keychain or the search list.
+
 The supervisor calls `unlock_keychain` once at startup (logs `[startup] keychain unlocked`) and again
 before each clone, so it is CI-ready immediately after boot, not only when the first job lands.
 
@@ -194,6 +206,9 @@ The golden image is CI-image rollback, not a verified backup of the physical hos
 The drain loop can be exercised without real VMs or GitHub credentials on a POSIX
 host: `python3 nycu-life/tests/test_supervisor_drain.py`. The fixture runs the
 actual script with disposable command stubs; it does not change the live service.
+The private-input helper has separate offline PTY fault tests:
+`python3 nycu-life/tests/test_unlock_keychain.py`. These use a synthetic password
+and mocked native CLI; they do not establish native macOS keychain acceptance.
 
 **Reboot-survival test — PASSED (two full `shutdown -r now` cycles, 2026-10-18):** SSH back in
 ~35–42 s; `console_user=thc1006` (auto-login fired), LaunchAgent `state=running` at boot, log shows
