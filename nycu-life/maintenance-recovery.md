@@ -84,8 +84,9 @@ paths, lock contention, changed storage/control/marker,
 native work, failed normal stop and unresolved postchecks. They are not native
 macOS, GUI, golden qualification, JIT or full CI acceptance.
 
-Separate existing supervisor findings remain outside this patch: the
-`run.sh | sed` pipeline can mask the runner's exit status; a failed `df` query
-uses the permissive default; startup reconciliation force-deletes clones by
-name prefix. These need independent scoped fixes and acceptance, rather than
-being silently changed in the maintenance recovery path.
+The supervisor source now preserves runner, log-writer and cleanup failures
+([#5](https://github.com/thc1006/lima_mac/pull/5)). Merging source does not
+update a running HOST supervisor; verify its deployed revision before relying
+on that behavior. Separate existing findings remain: a failed `df` query uses
+the permissive default, and startup reconciliation force-deletes clones by
+name prefix. These need independent scoped fixes and acceptance.
