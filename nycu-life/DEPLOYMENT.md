@@ -1,5 +1,10 @@
 # nycu-life macOS / iOS CI runner on Lima (mac-mini)
 
+Pre-cutover image maintenance uses the opt-in
+[failure recovery boundary](maintenance-recovery.md) to restore original runner
+admission when a phase fails and safe recovery is proven. A recovered failed
+phase keeps its nonzero exit code; no automatic live installation is implied.
+
 Self-hosted GitHub Actions **macOS/iOS** runner for `github.com/nycu-life/super-app`,
 built on a **Lima** (CNCF) macOS guest on an Apple **M4 / 16 GB** Mac mini.
 
