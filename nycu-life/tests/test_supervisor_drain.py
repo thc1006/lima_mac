@@ -36,7 +36,6 @@ class SupervisorDrainTests(unittest.TestCase):
             for command, body in {
                 'df': "printf 'Filesystem 1G-blocks Used Available Capacity Mounted\\nfixture 1000 1 999 1%% /\\n'\n",
                 'ioreg': 'exit 0\n',
-                'security': 'printf "security\\n" >> "$FIXTURE/events"\n',
                 'gh': '''printf 'gh %s\\n' "$*" >> "$FIXTURE/events"
 case "$*" in
   *generate-jitconfig*) touch "$FIXTURE/consumed"; printf 'disposable-jit\\n';;
@@ -72,6 +71,13 @@ esac
             self.assertEqual(original.count(export), 1)
             executable = directory / 'supervisor.sh'
             executable.write_text(original.replace(export, f'export PATH="{tools}:/usr/bin:/bin:/usr/sbin:/sbin"'))
+            # Keep this loop fixture offline; the real PTY helper has separate fault tests.
+            (directory / 'unlock-keychain.py').write_text('''import os, pathlib, sys
+assert len(sys.argv) == 3
+assert sys.argv[1] == os.environ['KC_PW_FILE']
+with (pathlib.Path(os.environ['FIXTURE']) / 'events').open('a') as events:
+    events.write('security\\n')
+''')
             env = dict(os.environ, FIXTURE=str(directory), DRAIN_FILE=str(request),
                        TOKEN_FILE=str(directory / 'token'), KC_PW_FILE=str(directory / 'password'),
                        ALWAYS_QUEUED='1' if permanently_queued else '0',
@@ -163,6 +169,7 @@ esac
             self.assertIn('stop -f macos-job-orphan', events)
             self.assertIn('delete -f macos-job-orphan', events)
             self.assertFalse(any('xcode27-candidate' in event for event in events))
+            self.assertEqual(events.count('security'), 2)  # Startup and admitted job.
 
 
 if __name__ == '__main__':
