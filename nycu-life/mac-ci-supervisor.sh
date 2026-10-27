@@ -22,6 +22,7 @@ LABEL="${LABEL:-nycu-life-macos}"
 TOKEN_FILE="${TOKEN_FILE:-$HOME/ci/.gh_token}"
 KC_PW_FILE="${KC_PW_FILE:-$HOME/ci/.kc_pw}"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+SUPERVISOR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 POLL="${POLL:-15}"
 MIN_FREE_GB="${MIN_FREE_GB:-15}"
 IDLE_SECS="${IDLE_SECS:-300}"
@@ -50,7 +51,7 @@ host_unhealthy() {
 }
 unlock_keychain() {
   [ -f "$KC_PW_FILE" ] || return 1
-  security unlock-keychain -p "$(cat "$KC_PW_FILE")" "$KEYCHAIN"; local rc=$?
+  python3 "$SUPERVISOR_DIR/unlock-keychain.py" "$KC_PW_FILE" "$KEYCHAIN"; local rc=$?
   [ "$rc" = 0 ] || log "[unlock] FAILED rc=$rc"
   return $rc
 }
