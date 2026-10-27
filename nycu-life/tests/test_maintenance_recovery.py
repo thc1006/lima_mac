@@ -304,6 +304,19 @@ class MaintenanceRecoveryTests(unittest.TestCase):
         self.assertFalse(outcome['recovered'])
         self.assert_no_actions(facts)
 
+    def test_preflight_reason_is_limited_to_controlled_recovery_errors(self):
+        for error in (RecoveryError('original_runner_service_unknown'), RuntimeError('private native detail')):
+            with self.subTest(kind=type(error).__name__):
+                facts = Facts()
+                def prepare(): raise error
+                outcome = guarded_phase(facts, prepare, lambda: self.fail('phase must not run'))
+                self.assertEqual(outcome['return_code'], 1)
+                self.assertFalse(outcome['phase_started'])
+                self.assertEqual(outcome.get('phase_failure_reason'),
+                                 'original_runner_service_unknown' if type(error) is RecoveryError else None)
+                self.assertNotIn('private native detail', json.dumps(outcome))
+                self.assert_no_actions(facts)
+
     def test_arming_failure_does_not_launch_but_recovers_owned_drain(self):
         facts = Facts(); facts.fail_record = 'armed.json'
         facts, outcome = self.execute(facts)
@@ -368,6 +381,28 @@ class MaintenanceRecoveryTests(unittest.TestCase):
 class NativeAdapterTests(unittest.TestCase):
     def native(self):
         return MacOperations('/unused/operation', '/unused/creation.json', 'pinned', lock_path='/unused/lock')
+
+    def test_launchctl_uses_only_top_level_service_state_and_pid(self):
+        # Sanitized shape captured from the actual macOS 26.7.2 service.
+        valid = ('gui/501/com.nycu-life.mac-ci-supervisor = {\n'
+                 '\tstate = running\n\tpid = 1872\n'
+                 '\tresource coalition = {\n\t\tstate = active\n\t\tpid = 99\n\t}\n'
+                 '\tjetsam coalition = {\n\t\tstate = active\n\t}\n}\n')
+        for text, accepted in ((valid, True), (valid.replace('\tstate = running\n', ''), False),
+                               (valid.replace('\tpid = 1872\n', ''), False),
+                               (valid.replace('\tstate = running\n', '\tstate = waiting\n'), False),
+                               (valid.replace('\tpid = 1872\n', '\tpid = 1872\n\tpid = 1873\n'), False)):
+            with self.subTest(text=text):
+                native = self.native()
+                replies = [subprocess.CompletedProcess([], 0, b'{}\n', b''),
+                           subprocess.CompletedProcess([], 0, text.encode(), b''),
+                           subprocess.CompletedProcess([], 0, b'fixed process start\n', b'')]
+                with mock.patch.object(native, '_run', side_effect=replies) as run:
+                    if accepted:
+                        self.assertEqual(native._service(), {'pid': 1872, 'start': 'fixed process start', 'GOLDEN': 'macos-ci'})
+                        self.assertEqual(run.call_args.args[0], ['/bin/ps', '-p', '1872', '-o', 'lstart='])
+                    else:
+                        with self.assertRaises(RecoveryError): native._service()
 
     def test_actual_nested_pause_receipt_path_and_unsafe_ancestors(self):
         with tempfile.TemporaryDirectory() as folder:

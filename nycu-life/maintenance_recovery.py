@@ -129,6 +129,8 @@ def guarded_phase(ops, proof, phase):
             except BaseException as error:
                 rc = 1
                 outcome['phase_failure_type'] = type(error).__name__
+                if type(error) is RecoveryError:
+                    outcome['phase_failure_reason'] = str(error)
             outcome['phase_return_code'] = rc
             outcome['return_code'] = rc
             if rc == 0:
@@ -340,8 +342,10 @@ class MacOperations:
         result = self._run(['/bin/launchctl', 'print', self.label])
         require(result.returncode == 0, 'original_runner_service_unavailable')
         text = result.stdout.decode()
-        state = re.findall(r'(?m)^\s*state = (\w+)\s*$', text)
-        pid = re.findall(r'(?m)^\s*pid = ([0-9]+)\s*$', text)
+        # launchctl nests resource/association records with their own state and
+        # PID fields. Only the one-tab service fields identify this process.
+        state = re.findall(r'(?m)^\tstate = (\w+)[ \t]*$', text)
+        pid = re.findall(r'(?m)^\tpid = ([0-9]+)[ \t]*$', text)
         golden = re.findall(r'(?m)^\s*"?GOLDEN"?\s*(?:=>|=)\s*"?([^"\s]+)"?\s*$', text)
         require(state == ['running'] and len(pid) == 1 and len(golden) <= 1, 'original_runner_service_unknown')
         start = self._run(['/bin/ps', '-p', pid[0], '-o', 'lstart='])
