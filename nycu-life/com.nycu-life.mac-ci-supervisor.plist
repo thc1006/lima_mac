@@ -35,6 +35,8 @@
     <string>/Users/thc1006/ci/supervisor.log</string>
     <key>EnvironmentVariables</key>
     <dict>
+        <key>GOLDEN</key>
+        <string>macos-ci-xcode27-20261027</string>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>HOME</key>
