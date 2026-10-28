@@ -1,15 +1,15 @@
 # Coordinated supervisor and unlock-helper installation draft
 
-This opt-in transaction is **not installed**. Its CLI prints a plan and accepts
-no apply option. A separately reviewed management entrypoint must provide the
+The transaction CLI prints a plan and accepts no apply option. The separately
+reviewed management entrypoint must provide the
 native adapter, private empty operation directory, exact protected-storage
 snapshots and the existing controller's freshly collected complete Mac queue
 proof. No new service, runner pool, label, environment setting or crash replayer
 is introduced. `maintenance_recovery.py` remains unchanged.
 
 The exact source pair is the PR7 supervisor `a31b4ac6…` and PR3 helper
-`a644e6ed…`. The native draft requires the existing live supervisor `bcb39309…`,
-unchanged plist `5cf9d1e8…`, GOLDEN `macos-ci` and post-canary initial PID99763,
+`a644e6ed…`. The reviewed one-shot installation required the then-live supervisor
+`bcb39309…`, unchanged plist `5cf9d1e8…`, GOLDEN `macos-ci` and initial PID99763,
 started `Wed Oct 28 10:02:52 2026`. Both PID and start are checked. A changed
 initial identity requires a new reviewed authorization; do not blindly rerun an
 operation or rewrite its old receipts. All full hashes are in `supervisor_install.py`.
@@ -71,8 +71,7 @@ A disposable Mac HOST file-only canary passed directory fsync, same-directory
 atomic replacement and restoration from prepared synthetic data on its APFS
 working filesystem. It removed its own temporary files and did not run this
 installer, launchctl, a VM or keychain unlock. The later native rollback result
-is recorded below. Formal installation still requires separate native acceptance;
-this primitive result does not establish deployment
+is recorded below. This primitive result alone does not establish deployment
 or JIT runner acceptance.
 
 The new offline tests exercise the transaction through Facts and selected actual
@@ -110,12 +109,31 @@ survive either restart. The first caller revision explicitly denied `--apply`.
 On 2026-10-28, its native controlled canary returned37 through the child and SSH,
 reported recovered/admission-restored, and preserved the original source, absent
 helper, plist, GOLDEN and all three protected images. The recovered process is
-PID99763 with the start above; PID1872 did not survive the restart. Immutable
+PID99763 with the start above at that point; PID1872 did not survive the restart.
+The later formal installation replaced it with PID5158, started
+`Wed Oct 28 10:16:07 2026`. Preserved
 receipts remain under `supervisor-install-16b72f3a4f7346c99b576a2b07213d6b`.
 
 This post-canary caller revision enables the apply path for a separately reviewed
 native invocation and uses a different operation directory,
 `supervisor-install-b0eb9e93876a4f5ca5c30a9e93d649b7`. Its default remains plan-only;
 the exact successful main/CI, complete idle queue and native guards still apply.
-Source authorization and native rollback acceptance do not establish installation
-or permission to interrupt an active CI VM. Formal installation remains pending.
+Source authorization alone does not establish installation or permission to
+interrupt an active CI VM.
+
+## Native installation acceptance
+
+On 2026-10-28, the reviewed caller installed the exact a31 supervisor/a644 helper
+pair after confirming the successful main CI and a complete idle queue. The
+unchanged plist bootstrapped a fresh source-bound process, the seven transaction
+receipts recorded success, and the owned drain was released. An independent
+read-only HOST check confirmed the installed pair, process identity, receipt
+hashes, unchanged original/source/new-image storage, six stopped VMs and absent
+drain. The original `GOLDEN=macos-ci` remains configured.
+
+The same source passed 86 offline tests on remote AMD and the Mac HOST's native
+Python 3.9.6. The earlier real failure canary unloaded the original service,
+injected exit37 before replacement, restored a fresh old-source service and
+resumed admission while preserving exit37. Neither result establishes a new JIT
+job's keychain/helper execution, Xcode 27 image qualification, SIGKILL recovery
+or power-loss recovery. The one-shot installation receipts must not be replayed.
