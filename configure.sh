@@ -384,6 +384,11 @@ EOF
     local SA_PRESEED_SCRIPT="/usr/local/sbin/lima-sa-preseed.sh"
     local SA_PRESEED_PLIST="/Library/LaunchDaemons/com.lima.sa-preseed.plist"
     local USER_SA_PLIST="$HOME/Library/Preferences/com.apple.SetupAssistant.plist"
+    local SA_GUEST_UID SA_GUEST_GID
+    SA_GUEST_UID=$(/usr/bin/id -u) || return 1
+    SA_GUEST_GID=$(/usr/bin/id -g) || return 1
+    # Capture the configured user now; this generated script runs as root at boot.
+    [[ "$SA_GUEST_UID" =~ ^[0-9]+$ && "$SA_GUEST_GID" =~ ^[0-9]+$ ]] || return 1
     sudo tee "$SA_PRESEED_SCRIPT" > /dev/null << SCRIPT
 #!/bin/sh
 BUILD=\$(sw_vers -buildVersion 2>/dev/null)
@@ -398,10 +403,10 @@ if [ "\$MAJOR_VERSION" -ge 27 ] 2>/dev/null; then
     # ensures the agent caches 5400 and ISRootMigrator does not trigger the SA Apple Account dialog.
     # The SA plist may not exist yet (it's written by configure.sh later via SSH), so this
     # block intentionally runs before the SA plist check below.
-    GUEST_UID=\$(id -u blake 2>/dev/null)
-    GUEST_GID=\$(id -g blake 2>/dev/null)
+    GUEST_UID="${SA_GUEST_UID}"
+    GUEST_GID="${SA_GUEST_GID}"
     if [ -n "\$GUEST_UID" ]; then
-        GLOBAL_PREFS="/Users/blake.guest/Library/Preferences/.GlobalPreferences.plist"
+        GLOBAL_PREFS="$HOME/Library/Preferences/.GlobalPreferences.plist"
         /usr/libexec/PlistBuddy -c "Set :AppleLanguagesSchemaVersion 5400" "\$GLOBAL_PREFS" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Add :AppleLanguagesSchemaVersion integer 5400" "\$GLOBAL_PREFS" 2>/dev/null || true
         [ -f "\$GLOBAL_PREFS" ] && chown "\${GUEST_UID}:\${GUEST_GID}" "\$GLOBAL_PREFS" 2>/dev/null || true
@@ -436,8 +441,8 @@ MANAGED_PLIST="/Library/Preferences/com.apple.SetupAssistant.managed.plist"
 # Restore plist ownership: defaults write (root) atomically replaces the file,
 # changing ownership to root. cfprefsd agent (running as the user) cannot read
 # a root-owned 0600 file — it gets an empty SA domain and mini-buddy shows dialogs.
-GUEST_UID=\$(id -u blake 2>/dev/null)
-GUEST_GID=\$(id -g blake 2>/dev/null)
+GUEST_UID="${SA_GUEST_UID}"
+GUEST_GID="${SA_GUEST_GID}"
 [ -n "\$GUEST_UID" ] && chown "\${GUEST_UID}:\${GUEST_GID}" "\$PLIST" 2>/dev/null || true
 SCRIPT
     sudo chmod 755 "$SA_PRESEED_SCRIPT"
