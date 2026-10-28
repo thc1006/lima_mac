@@ -83,3 +83,29 @@ VMs, or establish native deployment/JIT acceptance.
 python3 nycu-life/supervisor_install.py
 python3 nycu-life/tests/test_supervisor_install.py -v
 ```
+
+## Reviewed caller preparation
+
+`supervisor_install_entry.py` is a separate HOST caller draft. Its default mode
+prints a plan. Its fixed main/CI pins must be successful and still current, every
+noncompleted Mac-job inventory must be complete and idle, and its single private
+operation directory must not already exist before any attempted transaction.
+The caller reuses the supervisor's existing `~/ci/.gh_token` source for bounded
+metadata GETs; the PAT stays in HOST memory/the `gh` child environment and is not
+logged, copied to the laptop, or written into a new authentication configuration.
+It never sources the supervisor shell script.
+Every unfinished job needs a valid identity/status and explicit nonempty string
+labels before it can be classified as non-Mac. Unknown inventory blocks the
+transaction. Metadata stdout/stderr are limited in flight to4MiB/64KiB; every
+read/exit shares the command and complete-inventory deadlines. A failure stops
+and reaps only that owned metadata child; partial output is not returned.
+
+The controlled `--failure-canary` injects exit37 after verified old-service
+bootout, before replacement. Healthy recovery must preserve the old pair and
+GOLDEN, establish a fresh old-source PID/start identity, release only the owned
+drain, and retain the failed exit status. That fresh identity needs a subsequent
+exact reviewed pin update before a separate `--apply`; PID1872 is not claimed to
+survive either restart. This first caller revision explicitly denies `--apply`
+before native actions; only a reviewed post-canary revision can enable it with
+the new captured identity. This caller source is not native acceptance or permission
+to act on an active CI VM. The full native canary and installation remain pending.
