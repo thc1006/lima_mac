@@ -5,6 +5,10 @@ Pre-cutover image maintenance uses the opt-in
 admission when a phase fails and safe recovery is proven. A recovered failed
 phase keeps its nonzero exit code; no automatic live installation is implied.
 
+The separate [coordinated source-pair installation draft](supervisor-install.md)
+is plan-only and has not been deployed. It preserves rollback failures and does
+not reuse unchanged-PID maintenance proofs across a service restart.
+
 The repository supervisor also pauses new admission when the native disk probe
 fails, its GiB output is malformed or ambiguous, or `MIN_FREE_GB` is invalid.
 It checks again after the GitHub queue lookup, before cloning or unlocking.
