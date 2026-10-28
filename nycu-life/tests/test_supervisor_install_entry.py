@@ -208,10 +208,22 @@ class CallerTests(unittest.TestCase):
     def test_apply_is_denied_before_native_until_post_canary_pin_review(self):
         output = io.StringIO()
         with mock.patch.object(sys, 'argv', ['supervisor_install_entry.py', '--apply']), \
+             mock.patch.object(entry, 'APPLY_AUTHORIZED', False), \
              mock.patch.object(entry, 'execute') as execute, contextlib.redirect_stdout(output):
             self.assertEqual(entry.main(), 1)
         execute.assert_not_called()
         self.assertEqual(json.loads(output.getvalue())['reason'], 'post_canary_identity_and_apply_source_review_required')
+
+    def test_reviewed_apply_uses_a_new_operation_and_retains_the_native_result(self):
+        self.assertTrue(entry.APPLY_AUTHORIZED)
+        self.assertNotEqual(entry.OPERATION, 'supervisor-install-16b72f3a4f7346c99b576a2b07213d6b')
+        output = io.StringIO()
+        outcome = {'return_code': 37, 'installed': False, 'recovered': True}
+        with mock.patch.object(sys, 'argv', ['supervisor_install_entry.py', '--apply']), \
+             mock.patch.object(entry, 'execute', return_value=outcome) as execute, contextlib.redirect_stdout(output):
+            self.assertEqual(entry.main(), 37)
+        execute.assert_called_once_with('apply')
+        self.assertEqual(json.loads(output.getvalue()), outcome)
 
 
 class BoundedMetadataChildTests(unittest.TestCase):

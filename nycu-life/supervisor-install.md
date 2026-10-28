@@ -9,7 +9,8 @@ is introduced. `maintenance_recovery.py` remains unchanged.
 
 The exact source pair is the PR7 supervisor `a31b4ac6…` and PR3 helper
 `a644e6ed…`. The native draft requires the existing live supervisor `bcb39309…`,
-unchanged plist `5cf9d1e8…`, GOLDEN `macos-ci` and initial PID1872. A changed
+unchanged plist `5cf9d1e8…`, GOLDEN `macos-ci` and post-canary initial PID99763,
+started `Wed Oct 28 10:02:52 2026`. Both PID and start are checked. A changed
 initial identity requires a new reviewed authorization; do not blindly rerun an
 operation or rewrite its old receipts. All full hashes are in `supervisor_install.py`.
 
@@ -69,9 +70,9 @@ private backups aid that review; they are not automatic crash recovery.
 A disposable Mac HOST file-only canary passed directory fsync, same-directory
 atomic replacement and restoration from prepared synthetic data on its APFS
 working filesystem. It removed its own temporary files and did not run this
-installer, launchctl, a VM or keychain unlock. The full native service lifecycle,
-missing-service error wording and reviewed management caller still require
-separate native acceptance; this primitive result does not establish deployment
+installer, launchctl, a VM or keychain unlock. The later native rollback result
+is recorded below. Formal installation still requires separate native acceptance;
+this primitive result does not establish deployment
 or JIT runner acceptance.
 
 The new offline tests exercise the transaction through Facts and selected actual
@@ -105,7 +106,16 @@ bootout, before replacement. Healthy recovery must preserve the old pair and
 GOLDEN, establish a fresh old-source PID/start identity, release only the owned
 drain, and retain the failed exit status. That fresh identity needs a subsequent
 exact reviewed pin update before a separate `--apply`; PID1872 is not claimed to
-survive either restart. This first caller revision explicitly denies `--apply`
-before native actions; only a reviewed post-canary revision can enable it with
-the new captured identity. This caller source is not native acceptance or permission
-to act on an active CI VM. The full native canary and installation remain pending.
+survive either restart. The first caller revision explicitly denied `--apply`.
+On 2026-10-28, its native controlled canary returned37 through the child and SSH,
+reported recovered/admission-restored, and preserved the original source, absent
+helper, plist, GOLDEN and all three protected images. The recovered process is
+PID99763 with the start above; PID1872 did not survive the restart. Immutable
+receipts remain under `supervisor-install-16b72f3a4f7346c99b576a2b07213d6b`.
+
+This post-canary caller revision enables the apply path for a separately reviewed
+native invocation and uses a different operation directory,
+`supervisor-install-b0eb9e93876a4f5ca5c30a9e93d649b7`. Its default remains plan-only;
+the exact successful main/CI, complete idle queue and native guards still apply.
+Source authorization and native rollback acceptance do not establish installation
+or permission to interrupt an active CI VM. Formal installation remains pending.

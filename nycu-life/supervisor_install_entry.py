@@ -16,12 +16,12 @@ import subprocess
 import sys
 import time
 
-INSTALLER_SHA = '7b20f02bb0c3a684626cb8636431379a7d48bcf7253f3ab7d947a88440b9341a'
+INSTALLER_SHA = '5a8d873c6b1b939a1561a30dd18c14afca97ce1a1122a38b06895238124dea60'
 ENGINE_SHA = '10b660836aad016657cb65e7d784150ad9087e453065101db7cd7e95f28c60b2'
 APPROVED_MAIN = 'a5e2f8af49cd95528b4d9c6fb754be42b5b68e2a'
 APPROVED_RUN = 40611819616
-OPERATION = 'supervisor-install-16b72f3a4f7346c99b576a2b07213d6b'
-APPLY_AUTHORIZED = False  # Canary first; fresh old-source PID/start needs a new reviewed revision.
+OPERATION = 'supervisor-install-b0eb9e93876a4f5ca5c30a9e93d649b7'
+APPLY_AUTHORIZED = True  # Separate post-canary source review; native execution still needs fresh guards.
 REPOSITORY = 'nycu-life/super-app'
 STATUSES = ('queued', 'in_progress', 'waiting', 'pending', 'requested')
 
@@ -253,7 +253,8 @@ def main():
     if not args.apply and not args.failure_canary:
         print(json.dumps({'mode': 'plan_only', 'approved_main': APPROVED_MAIN,
                           'approved_run': APPROVED_RUN, 'operation': OPERATION,
-                          'initial_PID': 1872, 'native_actions': False, 'apply_authorized': APPLY_AUTHORIZED,
+                          'initial_PID': 99763, 'initial_start': 'Wed Oct 28 10:02:52 2026',
+                          'native_actions': False, 'apply_authorized': APPLY_AUTHORIZED,
                           'failure_canary': 'after verified old bootout, before replacement; retain RC37',
                           'credentials': 'existing HOST TOKEN_FILE, native child memory only; no auth reconfiguration'}))
         return 0

@@ -13,7 +13,7 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from supervisor_install import InstallOperations, MaintenanceTermination, RecoveryError, coordinated_install
+from supervisor_install import INITIAL_SERVICE, InstallOperations, MaintenanceTermination, RecoveryError, coordinated_install
 
 
 class Facts:
@@ -119,6 +119,16 @@ class Facts:
 
 
 class SupervisorInstallTests(unittest.TestCase):
+    def test_initial_source_bound_service_requires_the_reviewed_PID_start_and_GOLDEN(self):
+        control = {'service': dict(INITIAL_SERVICE)}
+        native = type('Native', (), {'_control': lambda self, kind: control})()
+        self.assertEqual(InstallOperations._initial_control(native), control)
+        for change in ({'pid': 1872}, {'pid': 99764}, {'start': 'Wed Oct 28 10:02:51 2026'}, {'GOLDEN': 'other'}):
+            with self.subTest(change=change):
+                control = {'service': {**INITIAL_SERVICE, **change}}
+                with self.assertRaisesRegex(RecoveryError, 'original_live_identity_changed_requires_review'):
+                    InstallOperations._initial_control(native)
+
     def recovered(self,facts,rc=1):
         result=coordinated_install(facts)
         self.assertEqual(result['return_code'],rc,result)

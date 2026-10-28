@@ -27,6 +27,7 @@ from maintenance_recovery import (MacOperations, MaintenanceTermination,
                                   termination_boundary)
 
 OLD_SUPERVISOR = 'bcb39309baff8017f102dc81ef704d8c26d888b6e63a8a60de9fdbb69db8070a'
+INITIAL_SERVICE = {'pid': 99763, 'start': 'Wed Oct 28 10:02:52 2026', 'GOLDEN': 'macos-ci'}
 PLIST = '5cf9d1e8be1dc0907919006938d4271d6177e85e6dd89f28fda996046b085e96'
 NEW = {'mac-ci-supervisor.sh': 'a31b4ac6e3368ce7b73494eff02218e7328fd12f95d1a39b4069a89ed5734545',
        'unlock-keychain.py': 'a644e6ed903ef3b4b68d9737b259629b0925b4ce5b8e871c7737f749c6d08142'}
@@ -279,6 +280,11 @@ class InstallOperations(MacOperations):
         return {'plist_sha256':metadata['sha256'],'supervisor_sha256':script['sha256'],
                 'GOLDEN':configured,'service':service}
 
+    def _initial_control(self):
+        control = self._control('old')
+        require(control['service'] == INITIAL_SERVICE, 'original_live_identity_changed_requires_review')
+        return control
+
     def prepare(self):
         import sys
         require(sys.platform=='darwin' and os.getuid()==os.geteuid()==501, 'Mac_HOST_UID501_required')
@@ -290,8 +296,7 @@ class InstallOperations(MacOperations):
         self.files=self._pair();self.old=dict(self.files)
         require(self.old['mac-ci-supervisor.sh'] is not None and self.old['mac-ci-supervisor.sh']['sha256']==OLD_SUPERVISOR,
                 'exact_old_supervisor_required')
-        control=self._control('old');self.initial_control=control
-        require(control['service']['pid']==1872, 'original_live_PID_changed_requires_review')
+        control=self._initial_control();self.initial_control=control
         self.seen_processes.add(control['service']['pid'])
         proof={'control':control,'VM_states':self._quiet(),'storage':self.protected_storage,
                'queue':self._queue(),'old_pair':self.old,'started_epoch':time.time()}
