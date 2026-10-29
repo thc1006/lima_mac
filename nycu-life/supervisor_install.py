@@ -20,7 +20,7 @@ import subprocess
 import tempfile
 import time
 
-if hashlib.sha256(Path(__file__).with_name('maintenance_recovery.py').read_bytes().replace(b'\r\n',b'\n')).hexdigest() != '10b660836aad016657cb65e7d784150ad9087e453065101db7cd7e95f28c60b2':
+if hashlib.sha256(Path(__file__).with_name('maintenance_recovery.py').read_bytes().replace(b'\r\n',b'\n')).hexdigest() != '922c306ac5f8d2a157bdb7502861c60d14aaf8d25ee18edff6b1a027539bee7c':
     raise RuntimeError('reviewed_maintenance_primitives_changed')
 from maintenance_recovery import (MacOperations, MaintenanceTermination,
                                   RecoveryError, digest, require,

@@ -9,6 +9,9 @@ the owned maintenance VM.
 The entrypoint supplies private, reviewed proofs for the original and source
 storage, the owned image identity, and the unchanged running supervisor. Its
 read-only proof callback runs under the existing exclusive maintenance flock.
+If it raises before returning a proof, the engine preserves the failure without
+writing operation records or attempting recovery: ownership was not established.
+It never claims admission was restored or adopts an existing drain in that case.
 For a new phase, set `create_owned_drain=True`: the engine first publishes an
 immutable private creation intent, then uses exclusive creation for its drain.
 An existing operator's drain is never adopted. The caller may retain the existing

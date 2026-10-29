@@ -97,11 +97,13 @@ def guarded_phase(ops, proof, phase):
             if name not in outcome['evidence_unavailable']:
                 outcome['evidence_unavailable'].append(name)
             return False
+    proof_ready = not callable(proof)
     try:
         with termination_boundary(), ops.lock():
             try:
-                if callable(proof):
+                if not proof_ready:
                     proof = proof()
+                    proof_ready = True
                 initial = proof.get('expected_initial_owned_state', 'Stopped')
                 require(initial in ('Stopped', 'Running'), 'invalid_initial_owned_state')
                 if proof.get('create_owned_drain') is True:
@@ -133,6 +135,12 @@ def guarded_phase(ops, proof, phase):
                     outcome['phase_failure_reason'] = str(error)
             outcome['phase_return_code'] = rc
             outcome['return_code'] = rc
+            if not proof_ready:
+                # Read-only preparation never returned ownership. The operation
+                # may not exist: do not audit, recover or adopt any prior drain.
+                if rc == 0:
+                    outcome['return_code'] = 1
+                return outcome
             if rc == 0:
                 if audit('phase-outcome.json', outcome):
                     return outcome
