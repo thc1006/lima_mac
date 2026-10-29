@@ -106,7 +106,7 @@ main() {
             log_info "Starting macOS VM configuration..."
             configure_password
             configure_autologin
-            run_with_timeout 60 configure_setup_assistant || log_warn "configure_setup_assistant timed out or failed (non-fatal — see run_with_timeout comment)"
+            run_with_timeout 60 configure_setup_assistant || return $?
             run_with_timeout 60 configure_screensaver || log_warn "configure_screensaver timed out or failed (non-fatal — see run_with_timeout comment)"
             configure_ssh_keys
             configure_chezmoi
