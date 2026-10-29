@@ -295,6 +295,72 @@ class MaintenanceRecoveryTests(unittest.TestCase):
                 self.assertFalse(facts.marker)
                 self.assertFalse(any(isinstance(e, tuple) and e[0] == 'stop' for e in facts.events))
 
+    def test_failed_read_only_prepare_skips_unowned_recovery_and_audit(self):
+        for marker in (False, True):
+            for error in (RecoveryError('current_main_changed'), RuntimeError('private native detail')):
+                with self.subTest(marker=marker, error=type(error).__name__):
+                    facts = Facts(); facts.marker = marker
+                    facts.record = mock.Mock(side_effect=FileNotFoundError('operation not created'))
+                    facts.observe = mock.Mock(side_effect=AssertionError('no proof returned'))
+                    phase = mock.Mock(side_effect=AssertionError('phase must not run'))
+                    def prepare():
+                        facts.events.append('prepare')
+                        raise error
+                    outcome = guarded_phase(facts, prepare, phase)
+                    self.assertEqual(outcome['return_code'], 1)
+                    self.assertEqual(outcome['phase_return_code'], 1)
+                    self.assertEqual(outcome['phase_failure_type'], type(error).__name__)
+                    self.assertEqual(outcome.get('phase_failure_reason'),
+                                     'current_main_changed' if type(error) is RecoveryError else None)
+                    self.assertFalse(outcome['phase_started'])
+                    self.assertFalse(outcome['recovery_attempted'])
+                    self.assertFalse(outcome['recovered'])
+                    self.assertFalse(outcome['admission_restored'])
+                    self.assertNotIn('recovery_failure_type', outcome)
+                    self.assertNotIn('recovery_reason', outcome)
+                    self.assertEqual(outcome['evidence_unavailable'], [])
+                    self.assertEqual(facts.events, ['lock', 'prepare'])
+                    self.assertEqual(facts.marker, marker)
+                    self.assertNotIn('private native detail', json.dumps(outcome))
+                    facts.record.assert_not_called()
+                    facts.observe.assert_not_called()
+                    phase.assert_not_called()
+
+    def test_read_only_prepare_interrupt_or_exit_never_runs_unowned_cleanup(self):
+        for error, phase_rc, result_rc in ((KeyboardInterrupt(), 130, 130),
+                                          (SystemExit(37), 37, 37), (SystemExit(0), 0, 1)):
+            with self.subTest(kind=type(error).__name__, code=phase_rc):
+                facts = Facts(); facts.marker = False
+                def prepare(): raise error
+                outcome = guarded_phase(facts, prepare, lambda: self.fail('phase must not run'))
+                self.assertEqual(outcome['phase_return_code'], phase_rc)
+                self.assertEqual(outcome['return_code'], result_rc)
+                self.assertFalse(outcome['recovery_attempted'])
+                self.assertFalse(outcome['recovered'])
+                self.assertFalse(outcome['admission_restored'])
+                self.assertEqual(outcome['evidence_unavailable'], [])
+                self.assertEqual(facts.events, ['lock'])
+
+    def test_returned_or_existing_owned_proof_still_recovers_later_37(self):
+        for callable_proof in (False, True):
+            with self.subTest(callable_proof=callable_proof):
+                facts = Facts()
+                def phase():
+                    facts.events.append('phase')
+                    facts.facts['owned_state'] = 'Running'
+                    return 37
+                proof = (lambda: facts.proof) if callable_proof else facts.proof
+                outcome = guarded_phase(facts, proof, phase)
+                self.assertEqual(outcome['return_code'], 37)
+                self.assertEqual(outcome['phase_return_code'], 37)
+                self.assertTrue(outcome['phase_started'])
+                self.assertTrue(outcome['recovery_attempted'])
+                self.assertTrue(outcome['recovered'])
+                self.assertTrue(outcome['admission_restored'])
+                self.assertFalse(facts.marker)
+                self.assertEqual([e for e in facts.events if isinstance(e, tuple) and e[0] == 'stop'],
+                                 [('stop', 'owned-maintenance', 180)])
+
     def test_failed_read_only_prepare_never_adopts_an_existing_marker(self):
         facts = Facts()
         def prepare(): raise RuntimeError('read only proof unavailable')
