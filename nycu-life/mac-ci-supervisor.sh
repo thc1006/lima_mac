@@ -19,6 +19,7 @@ export PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
 GOLDEN="${GOLDEN:-macos-ci}"
 REPO="${REPO:-nycu-life/super-app}"
 LABEL="${LABEL:-nycu-life-macos}"
+ADDITIONAL_LABEL="${ADDITIONAL_LABEL:-}"
 TOKEN_FILE="${TOKEN_FILE:-$HOME/ci/.gh_token}"
 KC_PW_FILE="${KC_PW_FILE:-$HOME/ci/.kc_pw}"
 KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
@@ -29,6 +30,16 @@ IDLE_SECS="${IDLE_SECS:-300}"
 DRAIN_FILE="${DRAIN_FILE:-$HOME/ci/maintenance.drain}"
 
 log() { echo "$(date '+%H:%M:%S') $*"; }
+# Activation is configured only by the reviewed dual-toolchain image cutover.
+# Empty keeps the original generic controller and JIT labels unchanged.
+case "$ADDITIONAL_LABEL" in
+  '') ;;
+  nycu-life-macos-xcode-27)
+    if [ "$LABEL" != nycu-life-macos ] || [ "$GOLDEN" != macos-ci-xcode27-20261027 ]; then
+      log "[admission] invalid dual-toolchain capability binding"; exit 1
+    fi;;
+  *) log "[admission] unknown additional capability"; exit 1;;
+esac
 gh_api() { GH_TOKEN="$(cat "$TOKEN_FILE")" gh api "$@"; }
 draining() { [ -e "$DRAIN_FILE" ] || [ -L "$DRAIN_FILE" ]; }
 
@@ -87,8 +98,13 @@ queued_macos_job() {
   local rid out
   for rid in $(gh_api "repos/$REPO/actions/runs?per_page=40" \
                  --jq '.workflow_runs[]|select(.status!="completed")|.id' 2>/dev/null); do
+    if [ -n "${ADDITIONAL_LABEL:-}" ]; then
+      out=$(gh_api "repos/$REPO/actions/runs/$rid/jobs" \
+            --jq ".jobs[]|select(.status==\"queued\")|select(((.labels//[])|index(\"$LABEL\")) or ((.labels//[])|index(\"$ADDITIONAL_LABEL\")))|select(all((.labels//[])[]; ascii_downcase == \"self-hosted\" or ascii_downcase == \"macos\" or ascii_downcase == \"arm64\" or . == \"$LABEL\" or . == \"$ADDITIONAL_LABEL\"))|.name" 2>/dev/null | head -1)
+    else
     out=$(gh_api "repos/$REPO/actions/runs/$rid/jobs" \
             --jq ".jobs[]|select(.status==\"queued\")|select((.labels//[])|index(\"$LABEL\"))|.name" 2>/dev/null | head -1)
+    fi
     [ -n "$out" ] && { echo "$out"; return 0; }
   done
   return 1
@@ -104,7 +120,7 @@ reconcile() {
 
 provision_and_run() {
   local id inst jit runner_rc writer_rc stop_rc delete_rc
-  local -a pipeline_rc
+  local -a pipeline_rc capability_args
   id=$(date +%Y%m%d%H%M%S)
   inst="macos-job-$id"
   # Recheck after the GitHub lookup: maintenance may have begun during polling.
@@ -119,8 +135,13 @@ provision_and_run() {
     [ "$delete_rc" -eq 0 ] || log "[cleanup] delete FAILED inst=$inst rc=$delete_rc"
     return 1
   }
+  capability_args=(-f "labels[]=$LABEL")
+  if [ -n "${ADDITIONAL_LABEL:-}" ]; then
+    capability_args=(-f "labels[]=self-hosted" -f "labels[]=macOS" -f "labels[]=ARM64"
+                     -f "labels[]=$LABEL" -f "labels[]=$ADDITIONAL_LABEL")
+  fi
   jit=$(gh_api -X POST "repos/$REPO/actions/runners/generate-jitconfig" \
-        -f name="$inst" -F runner_group_id=1 -f "labels[]=$LABEL" -f work_folder=_work \
+        -f name="$inst" -F runner_group_id=1 "${capability_args[@]}" -f work_folder=_work \
         --jq '.encoded_jit_config' 2>/dev/null)
   if [ -z "$jit" ]; then
     log "jitconfig failed"

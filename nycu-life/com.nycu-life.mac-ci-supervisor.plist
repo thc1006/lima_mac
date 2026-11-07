@@ -37,6 +37,8 @@
     <dict>
         <key>GOLDEN</key>
         <string>macos-ci-xcode27-20261027</string>
+        <key>ADDITIONAL_LABEL</key>
+        <string>nycu-life-macos-xcode-27</string>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>HOME</key>

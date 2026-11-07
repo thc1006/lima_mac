@@ -56,32 +56,43 @@ those ordinary devices. Duo boot/shutdown passed, as did the iPhone 17 Pro / iOS
 26.5 Debug state lane (493 tests). This does not establish OCR, full UI, full CI
 or Duo interaction acceptance.
 
-The LaunchAgent selects the new image name `macos-ci-xcode27-20261027` through the
-supervisor's existing **GOLDEN** input. Keep the original `macos-ci` stopped and its
-configuration/storage untouched for rollback. `macos-ci.yaml` remains the original
-26.5 bootstrap IPSW; the new image will be a stopped native clone of the updated,
-cleaned candidate, not a new IPSW download. The new image still needs creation and
-clone-smoke acceptance before this LaunchAgent revision is installed on the host.
-The existing repository, `nycu-life-macos` label, runner group and per-job JIT
-clone/run/delete lifecycle are unchanged.
+The checked-in LaunchAgent is the future destination for the same Xcode 27.1
+proposal: `GOLDEN=macos-ci-xcode27-20261027` and
+`ADDITIONAL_LABEL=nycu-life-macos-xcode-27`. It is not installation authority.
+The controller defaults the additional label to empty and preserves its original
+generic behavior until the reviewed cutover activates both keys. In dual mode,
+the single ephemeral runner explicitly requests `self-hosted`, `macOS`, `ARM64`,
+`nycu-life-macos` and `nycu-life-macos-xcode-27`; ordinary jobs keep the generic
+capability, while the new toolchain workflow may require the Xcode 27 capability.
+No second pool or VM is introduced.
 
-Keep maintenance drain in place while preparing the image. Retain host evidence,
-remove only verified provisioning scratch, and exclude private recovery backups
-from the new image while retaining the candidate's backups. Normal-stop the
-candidate, clone it to the new name without `--start`, and verify independent
-disk/vz-aux identities. Use one disposable clone to check boot, the exact toolchain
-and runtime matrix, and the unlocked guest session, then keep the new golden
-stopped. That smoke is separate from JIT/full-suite acceptance: queued super-app
-PR #215 supplies those results through the existing CI after admission resumes.
+Use the two-stage procedure in [the capability bridge proposal](dual-xcode-capability-bridge.md):
 
-Install the one-key LaunchAgent revision only at the drained idle boundary:
-back up the current plist, disable/bootout the idle service, atomically install a
-linted plist, then enable/bootstrap it with drain still present. Verify the new
-GOLDEN selection and fresh paused logs before resuming admission. To revert,
-request drain, let any admitted job finish and its clone disappear, then restore
-the backed-up plist through the same idle reload procedure; without its GOLDEN
-override, the existing supervisor selects `macos-ci`. Do not interrupt a live job
-or rename either golden to switch images. See the maintenance procedure below.
+1. At a reviewed, drained idle boundary, install the source pair through the
+   existing guarded installer while retaining the actual original live plist
+   and its empty additional label. Validate generic operation and retain its
+   exact backups. Do not copy the future checked-in plist at this step.
+2. Fresh-bind the actual post-install controller pair, PID/start identity and
+   current main before preparing the separate default-off cutover. Require a
+   fresh independent clean-NEW clone qualification and both real, successful
+   toolchain verifier records and their original report bytes from that same
+   owned qualification operation. The original recovery/cutover guards and
+   complete idle frontier still apply. `CUTOVER_ENABLED=False` and the unset
+   qualification acceptance pin prevent applying this source draft.
+
+Keep the original `macos-ci` stopped with its configuration/storage untouched.
+`macos-ci.yaml` remains the original 26.5 bootstrap IPSW. The new golden is a
+separately qualified stopped native clone, not a renamed old image or another
+IPSW download. Profile-pair trials and preflight reports do not qualify NEW and
+must not be relabeled as clean-clone or full Native CI success. Full Xcode 27
+suite/JIT acceptance through SuperApp PR #215 remains a later responsibility.
+
+Only the two allowlisted environment keys change during activation. The
+transaction backs up and stages the exact original plist bytes, including
+originally absent keys, for rollback. Revert only through the same guarded idle
+transaction; do not interrupt a live job, manually change a held drain, or rename
+either golden. All observed state and source identities require fresh review
+before an actual host operation.
 
 ## Gotchas (read before touching anything)
 1. **host macOS must be ≥ guest macOS.** Otherwise the guest fails to boot with
@@ -153,6 +164,10 @@ Hardened to **per-job ephemeral clones** (see `mac-ci-supervisor.sh` and
       clone, then the clone was destroyed; the golden stayed untouched.
 
 ## Reboot survival — launchd LaunchAgent (DONE 2026-10-18)
+> The commands below record the original deployment recipe. For this draft's
+> future two-key plist, use the guarded two-stage cutover above; copying the
+> checked-in future destination is not the phase-one controller installation.
+
 The supervisor runs under a user **LaunchAgent** (`com.nycu-life.mac-ci-supervisor.plist` in this
 dir), `RunAtLoad` + `KeepAlive`, logging to `~/ci/supervisor.log`. Auto-login (gotcha #4) brings up
 the `gui/$UID` session that loads the agent; the supervisor then unlocks the keychain in-process
