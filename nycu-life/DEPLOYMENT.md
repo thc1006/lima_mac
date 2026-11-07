@@ -46,15 +46,17 @@ macOS host (26.5 / 25F71, M4, 16 GB, FileVault OFF)
 
 ## Xcode 27.1 image revision (2026-10-27)
 
-The host and tested candidate now run macOS **26.7.2 / 25G332**. The candidate has
-**Xcode 27.1 / 27A9275**, Swift 6.4 and the **iOS 27.1 SDK**, selected by the
-workflow's explicit `/Applications/Xcode_27.1.app/Contents/Developer` path.
-The guest's default Xcode 26.6 and both installed Xcode applications are retained.
+Historical measurements from **2026-10-27**: the host and then-tested candidate
+ran macOS **26.7.2 / 25G332**. That candidate had **Xcode 27.1 / 27A9275**,
+Swift 6.4 and the **iOS 27.1 SDK**, selected by the workflow's explicit
+`/Applications/Xcode_27.1.app/Contents/Developer` path. At that time, the guest's
+default Xcode 26.6 and both installed Xcode applications were retained.
 Ordinary iPhone 17 Pro and iPad Pro 11-inch (M5) tests use **iOS 26.5 / 23F77**;
 iPhone Duo uses **iOS 27.1 / 24A94425**, whose actual supported device types exclude
 those ordinary devices. Duo boot/shutdown passed, as did the iPhone 17 Pro / iOS
-26.5 Debug state lane (493 tests). This does not establish OCR, full UI, full CI
-or Duo interaction acceptance.
+26.5 Debug state lane (493 tests), in those October 27 observations. These are
+not this round's NEW-image qualification or actual dual-verifier results and do
+not establish OCR, full UI, full CI or Duo interaction acceptance.
 
 The checked-in LaunchAgent is the future destination for the same Xcode 27.1
 proposal: `GOLDEN=macos-ci-xcode27-20261027` and
