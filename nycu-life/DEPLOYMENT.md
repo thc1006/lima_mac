@@ -20,7 +20,7 @@ nor replaces the maintenance recovery boundary. Offline failure tests are in
 Self-hosted GitHub Actions **macOS/iOS** runner for `github.com/nycu-life/super-app`,
 built on a **Lima** (CNCF) macOS guest on an Apple **M4 / 16 GB** Mac mini.
 
-Status: **working end-to-end** — a real GitHub Actions job (`runs-on: nycu-life-macos`) ran on
+Original image status (2026-10-18): **working end-to-end** — a real GitHub Actions job (`runs-on: nycu-life-macos`) ran on
 it and passed (Xcode 26.6 + iOS 26.5 Simulator verified). This doc records the recipe and the
 (many) gotchas so it can be re-built, maintained, and optimised.
 
@@ -35,7 +35,7 @@ it and passed (Xcode 26.6 + iOS 26.5 Simulator verified). This doc records the r
 - `agoda-com/macOS-vz-kubelet` (Virtual Kubelet) was validated as a k8s-native alternative but is
   experimental; Lima chosen for maturity.
 
-## Architecture
+## Original deployed image (2026-10-18)
 ```
 macOS host (26.5 / 25F71, M4, 16 GB, FileVault OFF)
 └─ Lima vz  ─ instance "macos-ci"  (macOS 26.5 / 25F71 guest)
@@ -43,6 +43,58 @@ macOS host (26.5 / 25F71, M4, 16 GB, FileVault OFF)
       └─ GitHub Actions runner "macos-ci" — label: nycu-life-macos
 ```
 16 GB ⇒ run **one heavy VM at a time** (the macOS guest OR the Linux k3s, never both under load).
+
+## Xcode 27.1 image revision (2026-10-27)
+
+Historical measurements from **2026-10-27**: the host and then-tested candidate
+ran macOS **26.7.2 / 25G332**. That candidate had **Xcode 27.1 / 27A9275**,
+Swift 6.4 and the **iOS 27.1 SDK**, selected by the workflow's explicit
+`/Applications/Xcode_27.1.app/Contents/Developer` path. At that time, the guest's
+default Xcode 26.6 and both installed Xcode applications were retained.
+Ordinary iPhone 17 Pro and iPad Pro 11-inch (M5) tests use **iOS 26.5 / 23F77**;
+iPhone Duo uses **iOS 27.1 / 24A94425**, whose actual supported device types exclude
+those ordinary devices. Duo boot/shutdown passed, as did the iPhone 17 Pro / iOS
+26.5 Debug state lane (493 tests), in those October 27 observations. These are
+not this round's NEW-image qualification or actual dual-verifier results and do
+not establish OCR, full UI, full CI or Duo interaction acceptance.
+
+The checked-in LaunchAgent is the future destination for the same Xcode 27.1
+proposal: `GOLDEN=macos-ci-xcode27-20261027` and
+`ADDITIONAL_LABEL=nycu-life-macos-xcode-27`. It is not installation authority.
+The controller defaults the additional label to empty and preserves its original
+generic behavior until the reviewed cutover activates both keys. In dual mode,
+the single ephemeral runner explicitly requests `self-hosted`, `macOS`, `ARM64`,
+`nycu-life-macos` and `nycu-life-macos-xcode-27`; ordinary jobs keep the generic
+capability, while the new toolchain workflow may require the Xcode 27 capability.
+No second pool or VM is introduced.
+
+Use the two-stage procedure in [the capability bridge proposal](dual-xcode-capability-bridge.md):
+
+1. At a reviewed, drained idle boundary, install the source pair through the
+   existing guarded installer while retaining the actual original live plist
+   and its empty additional label. Validate generic operation and retain its
+   exact backups. Do not copy the future checked-in plist at this step.
+2. Fresh-bind the actual post-install controller pair, PID/start identity and
+   current main before preparing the separate default-off cutover. Require a
+   fresh independent clean-NEW clone qualification and both real, successful
+   toolchain verifier records and their original report bytes from that same
+   owned qualification operation. The original recovery/cutover guards and
+   complete idle frontier still apply. `CUTOVER_ENABLED=False` and the unset
+   qualification acceptance pin prevent applying this source draft.
+
+Keep the original `macos-ci` stopped with its configuration/storage untouched.
+`macos-ci.yaml` remains the original 26.5 bootstrap IPSW. The new golden is a
+separately qualified stopped native clone, not a renamed old image or another
+IPSW download. Profile-pair trials and preflight reports do not qualify NEW and
+must not be relabeled as clean-clone or full Native CI success. Full Xcode 27
+suite/JIT acceptance through SuperApp PR #215 remains a later responsibility.
+
+Only the two allowlisted environment keys change during activation. The
+transaction backs up and stages the exact original plist bytes, including
+originally absent keys, for rollback. Revert only through the same guarded idle
+transaction; do not interrupt a live job, manually change a held drain, or rename
+either golden. All observed state and source identities require fresh review
+before an actual host operation.
 
 ## Gotchas (read before touching anything)
 1. **host macOS must be ≥ guest macOS.** Otherwise the guest fails to boot with
@@ -114,6 +166,10 @@ Hardened to **per-job ephemeral clones** (see `mac-ci-supervisor.sh` and
       clone, then the clone was destroyed; the golden stayed untouched.
 
 ## Reboot survival — launchd LaunchAgent (DONE 2026-10-18)
+> The commands below record the original deployment recipe. For this draft's
+> future two-key plist, use the guarded two-stage cutover above; copying the
+> checked-in future destination is not the phase-one controller installation.
+
 The supervisor runs under a user **LaunchAgent** (`com.nycu-life.mac-ci-supervisor.plist` in this
 dir), `RunAtLoad` + `KeepAlive`, logging to `~/ci/supervisor.log`. Auto-login (gotcha #4) brings up
 the `gui/$UID` session that loads the agent; the supervisor then unlocks the keychain in-process
