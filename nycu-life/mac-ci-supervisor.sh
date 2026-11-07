@@ -46,8 +46,29 @@ human_active() {
   [ -n "$boot" ] && [ $((now - boot)) -gt "$IDLE_SECS" ]
 }
 host_unhealthy() {
-  local g; g=$(df -g / | awk 'NR==2{print $4}')
-  [ "${g:-99}" -lt "$MIN_FREE_GB" ]
+  local report g
+  case "$MIN_FREE_GB" in
+    ''|*[!0-9]*) log "[admission] invalid disk threshold — pause"; return 0;;
+  esac
+  if [ "${#MIN_FREE_GB}" -gt 9 ]; then
+    log "[admission] invalid disk threshold — pause"; return 0
+  fi
+  # Check df itself before parsing: a pipeline can hide its failure. Keep -g
+  # alone; macOS -P selects 512-byte blocks even when combined with -g.
+  if ! report=$(LC_ALL=C df -g / 2>/dev/null); then
+    log "[admission] disk probe FAILED — pause"; return 0
+  fi
+  if ! g=$(printf '%s\n' "$report" | awk '
+    NR == 1 { valid = ($1 == "Filesystem" && $2 == "1G-blocks" && $4 == "Available"); next }
+    NR == 2 {
+      if (NF != 9 || $9 != "/" || $4 !~ /^[0-9]+$/ || length($4) > 9) valid = 0
+      available = $4
+    }
+    END { if (NR != 2 || !valid || available == "") exit 1; print available }
+  '); then
+    log "[admission] disk probe invalid — pause"; return 0
+  fi
+  [ "$g" -lt "$MIN_FREE_GB" ]
 }
 unlock_keychain() {
   [ -f "$KC_PW_FILE" ] || return 1
@@ -82,23 +103,49 @@ reconcile() {
 }
 
 provision_and_run() {
-  local id inst jit
+  local id inst jit runner_rc writer_rc stop_rc delete_rc
+  local -a pipeline_rc
   id=$(date +%Y%m%d%H%M%S)
   inst="macos-job-$id"
   # Recheck after the GitHub lookup: maintenance may have begun during polling.
   if draining; then log "[admission] drain — skip queued job"; return 0; fi
+  if host_unhealthy; then log "[admission] low or unknown disk — skip queued job"; return 0; fi
   log "[provision] clone $GOLDEN -> $inst (CoW)"
   limactl clone "$GOLDEN" "$inst" >/dev/null 2>&1 || { log "clone failed"; return 1; }
   unlock_keychain
-  limactl start --timeout 90s "$inst" >/dev/null 2>&1 || { log "start failed"; limactl delete -f "$inst" 2>/dev/null; return 1; }
+  limactl start --timeout 90s "$inst" >/dev/null 2>&1 || {
+    log "start failed"
+    limactl delete -f "$inst" 2>/dev/null; delete_rc=$?
+    [ "$delete_rc" -eq 0 ] || log "[cleanup] delete FAILED inst=$inst rc=$delete_rc"
+    return 1
+  }
   jit=$(gh_api -X POST "repos/$REPO/actions/runners/generate-jitconfig" \
         -f name="$inst" -F runner_group_id=1 -f "labels[]=$LABEL" -f work_folder=_work \
         --jq '.encoded_jit_config' 2>/dev/null)
-  if [ -z "$jit" ]; then log "jitconfig failed"; limactl stop -f "$inst" 2>/dev/null; limactl delete -f "$inst" 2>/dev/null; return 1; fi
+  if [ -z "$jit" ]; then
+    log "jitconfig failed"
+    limactl stop -f "$inst" 2>/dev/null; stop_rc=$?
+    limactl delete -f "$inst" 2>/dev/null; delete_rc=$?
+    [ "$stop_rc" -eq 0 ] || log "[cleanup] stop FAILED inst=$inst rc=$stop_rc"
+    [ "$delete_rc" -eq 0 ] || log "[cleanup] delete FAILED inst=$inst rc=$delete_rc"
+    return 1
+  fi
   log "[run] one job in $inst"
   limactl shell "$inst" -- bash -lc "cd ~/actions-runner && ./run.sh --jitconfig '$jit'" 2>&1 | sed "s/^/  [$inst] /"
+  pipeline_rc=("${PIPESTATUS[@]}")
+  runner_rc=${pipeline_rc[0]}; writer_rc=${pipeline_rc[1]}
+  [ "$runner_rc" -eq 0 ] || log "[run] runner FAILED inst=$inst rc=$runner_rc"
+  [ "$writer_rc" -eq 0 ] || log "[run] log writer FAILED inst=$inst rc=$writer_rc"
   log "[cleanup] destroy $inst"
-  limactl stop -f "$inst" 2>/dev/null; limactl delete -f "$inst" 2>/dev/null
+  limactl stop -f "$inst" 2>/dev/null; stop_rc=$?
+  limactl delete -f "$inst" 2>/dev/null; delete_rc=$?
+  [ "$stop_rc" -eq 0 ] || log "[cleanup] stop FAILED inst=$inst rc=$stop_rc"
+  [ "$delete_rc" -eq 0 ] || log "[cleanup] delete FAILED inst=$inst rc=$delete_rc"
+  # Cleanup always runs; retain the first failure in lifecycle order.
+  [ "$runner_rc" -eq 0 ] || return "$runner_rc"
+  [ "$writer_rc" -eq 0 ] || return "$writer_rc"
+  [ "$stop_rc" -eq 0 ] || return "$stop_rc"
+  return "$delete_rc"
 }
 
 log "supervisor starting (golden=$GOLDEN repo=$REPO label=$LABEL)"
@@ -109,7 +156,12 @@ reconcile
 if unlock_keychain; then log "[startup] keychain unlocked"; fi   # unlock at startup too (reboot), not only per-job
 while true; do
   if draining; then log "[admission] drain — idle"; sleep "$POLL"; continue; fi
-  if host_unhealthy; then log "[admission] low disk — pause"; sleep 60; continue; fi
+  if host_unhealthy; then log "[admission] low or unknown disk — pause"; sleep 60; continue; fi
   if human_active;  then log "[admission] human active — pause"; sleep 60; continue; fi
-  if queued_macos_job >/dev/null; then provision_and_run; else sleep "$POLL"; fi
+  if queued_macos_job >/dev/null; then
+    if provision_and_run; then :; else
+      lifecycle_rc=$?
+      log "[lifecycle] FAILED rc=$lifecycle_rc"
+    fi
+  else sleep "$POLL"; fi
 done

@@ -34,7 +34,7 @@ class SupervisorDrainTests(unittest.TestCase):
             (directory / 'token').write_text('disposable-test-token')
             (directory / 'password').write_text('disposable-test-password')
             for command, body in {
-                'df': "printf 'Filesystem 1G-blocks Used Available Capacity Mounted\\nfixture 1000 1 999 1%% /\\n'\n",
+                'df': "printf 'Filesystem 1G-blocks Used Available Capacity iused ifree %%iused Mounted on\\nfixture 1000 1 999 1%% 1 999 1%% /\\n'\n",
                 'ioreg': 'exit 0\n',
                 'gh': '''printf 'gh %s\\n' "$*" >> "$FIXTURE/events"
 case "$*" in
