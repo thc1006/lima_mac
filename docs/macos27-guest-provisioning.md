@@ -9,9 +9,12 @@ takes over when host **and** guest are both macOS 27+.
 Companion doc: [ipsw-build-manifest.md](ipsw-build-manifest.md) — the guest-OS-version
 detection this feature depends on (the "PR 1" prerequisite).
 
-Status as of 2026-10-07: **working end to end** in lima-devl P1 r6 (account `<host user>.guest`; first working build was r4 on 2026-10-05) (local only,
-forked Code-Hex/vz) — see "2026-10-05 Working end to end" below for findings and
-the Apple-vs-Lima mismatches.
+Status as of 2026-11-14: **working end to end** in lima-devl P1 r9, on blakeports
+main (`db495c6`). The account keeps the host user name and the guest agent moves its
+home to `/Users/<host user>.guest`; see "2026-11-13 Moving the home" below. Local
+only: P1 runs on Code-Hex/vz v4 main (port patch Z1, no v4 tag yet). The first
+working build was r4 on 2026-10-05, on a vz fork; see "2026-10-05 Working end to
+end" for findings and the Apple-vs-Lima mismatches.
 
 ---
 
@@ -232,18 +235,21 @@ restore" via "the automated guest configuration protocol". What we found:
 | Setup Assistant | Must run on first boot; it applies the options | Disk patch writes `.AppleSetupDone` + `.skipbuddy` so it never runs | Removes both markers after patching when provisioning is pending (r2) |
 | Who creates the user | Setup Assistant (faceless) | fakecloudinit `sysadminctl -addUser` | fakecloudinit waits for the account in directory services and adopts it; no `sysadminctl` (r3) |
 | Password | Host supplies it | Guest generates a random one, writes `~/password` | Provisioning password goes to cidata as a separate `guest-provisioning-password` file (not in `user-data`); fakecloudinit writes it to `~/password` (r3) |
-| Home directory | Always `/Users/<username>`; no API field to change it | `/Users/<user>.guest`, derived from the host username (avoids colliding with a host home mounted at `/Users/<user>`) | The **account name** is chosen so Apple's home equals Lima's usual one: with guest provisioning, `user.name` defaults to `<host user>.guest` and `user.home` to `/Users/{{.User}}` (set in `FillDefault`, r6). r4's cidata-level home override is gone. A dotted name is accepted by Apple (r5 tested `lima.<user>`, r6 `<user>.guest`). |
+| Home directory | Always `/Users/<username>`; no API field to change it | `/Users/<user>.guest`, derived from the host username (avoids colliding with a host home mounted at `/Users/<user>`) | r9: Lima's normal defaults (`user.name` = host user, `user.home` = `/Users/<user>.guest`). fakecloudinit moves the home Setup Assistant created to `user.home` before the first login (see "2026-11-13 Moving the home"). r5/r6 instead named the account `<host user>.guest` so Apple's home matched; r4 overrode the home in cidata. |
 | Later boots | Options never re-applied | "Already set up" = `/Users/<user>.guest` exists | Also treats an existing directory-services account as set up |
-| Auto-login / Remote Login | `logsInAutomatically` / `enablesRemoteLogin` | fakecloudinit enables sshd; lima_mac `configure.sh` handles auto-login | Both now come from Apple; fakecloudinit still loads sshd (harmless) |
-| Config surface | Five fields on one object | n/a | `osOpts.Darwin.guestProvisioning` keeps only `password`, `logsInAutomatically`, `enablesRemoteLogin`; username and full name come from `user.name` / `user.comment` (r5). lima_mac passes only the password (random per run, or `CUSTO_PASSWORD`). |
+| Auto-login / Remote Login | `logsInAutomatically` / `enablesRemoteLogin` | fakecloudinit enables sshd; lima_mac `configure.sh` handles auto-login | Remote Login comes from Apple; fakecloudinit still loads sshd (harmless). Auto-login comes from Apple only when the home doesn't move; when it moves (the default), Lima turns Apple's off and writes `/etc/kcpassword` + `autoLoginUser` itself after the move, so auto-login starts from the second boot (r9) |
+| Config surface | Five fields on one object | n/a | `osOpts.Darwin.guestProvisioning` keeps only `password`, `logsInAutomatically`, `enablesRemoteLogin`; username and full name come from `user.name` / `user.comment` (r5). lima_mac passes only the password (random per run, `PROVISION_PASSWORD`). |
 
 Consequences to resolve before anything goes upstream (#5516):
 
-- **Host-home mount collision: avoided by naming.** The account is `<host user>.guest`,
-  so a host home mounted at `/Users/<host user>` no longer shadows it. (An explicit
-  `user.name` equal to the host user would reintroduce the clash.)
-- **Explicit `user.home` is rejected** unless it equals `/Users/<user.name>` (validation
-  added in r5), since the boot scripts need the home Setup Assistant creates.
+- **Host-home mount collision: avoided by moving the home** (r9). The home ends up at
+  `user.home` (default `/Users/<host user>.guest`), so a host home mounted at
+  `/Users/<host user>` doesn't shadow it. r5/r6 avoided it by naming the account
+  `<host user>.guest` instead, and rejected any `user.home` other than
+  `/Users/<user.name>`; r9 drops both.
+- **First boot stops at the login window** when the home moves, because Apple's
+  auto-login is turned off so the old home is never logged into. Auto-login starts
+  from the second boot.
 - **Who owns the account fields.** Username and full name now come from the Lima user
   (r5), as #5516 suggests. The password is still configured, not generated by Lima.
 - **Password at rest:** plaintext in `lima.yaml` and on the cidata ISO, same exposure
@@ -264,9 +270,61 @@ The `macos-27-custo` test VM was folded into `macos-27`: `macos-27.yaml` now car
 and the `macOS_27_custo` runner, label and workflow input are gone. The VM is built the
 same way as 26/15: Lima/Apple provision the account, then `tools/macos-setup` customizes
 the disk from the host (wallpaper, screensaver, energy, TCC AppleEvents). Checked on a
-clean `make rebuild-27`: account `<user>.guest`, passwordless sudo, Finder and Terminal
+clean `make rebuild-27`: account `<user>.guest` (r6 naming), passwordless sudo, Finder and Terminal
 AppleEvents without a dialog, netatalk CI green on `macOS_27`. Not exercised: a
 non-empty `MACOS_PASSWORD` on top of a provisioned account.
+
+## 2026-11-13 Moving the home (lima-devl P1 r8/r9)
+
+Blake's idea: keep Lima's normal account (`user.name` = host user) and let Setup
+Assistant create `/Users/<user>`, then move the home to `user.home` and repoint the
+account with `dscl`, before anyone logs in.
+
+**How it works (r9).** On the first boot, cidata carries `guest-provisioning-password`
+(and `guest-provisioning-autologin` when `logsInAutomatically` is set and the home
+moves). fakecloudinit (`io.lima-vm.lima-macos-init`, as root):
+
+1. Waits for the account in directory services, then for `/var/db/.AppleSetupDone`.
+2. `launchctl bootout user/<uid>`. Setup Assistant leaves a background launchd
+   session for the new user at the login window (`distnoted`, `cfprefsd`, `trustd`,
+   `secd`, `lsd`, `pkd`, `containermanagerd`, `mdbulkimport`, `mbbackgrounduse`);
+   moving the home under it isn't safe.
+3. Waits until `pgrep -U <uid>` finds nothing.
+4. `mv /Users/<user> <user.home>`, `dscl . -create /Users/<user> NFSHomeDirectory
+   <user.home>`, `dscacheutil -flushcache`, then checks the account reads back the new
+   home. If `dscl` fails the directory is moved back. If the move fails, it warns and
+   symlinks `user.home` to Apple's home so the boot scripts still work.
+5. Installs `~/password`, SSH keys and the rest as before, then writes `/etc/kcpassword`
+   (XOR key `7D 89 52 23 D2 BC DD EA A3 B9 1F`, padded to a multiple of 12) and
+   `defaults write /Library/Preferences/com.apple.loginwindow autoLoginUser`.
+
+The vz driver turns Apple's `logsInAutomatically` off whenever the home moves, so
+the user is never logged in with the old home.
+
+**r8 failures, fixed in r9.**
+- The "no processes for the uid" wait timed out because of Setup Assistant's
+  background session (above), so the move was skipped. r9 adds the `bootout`.
+- r8's fallback kept Apple's home, and lima_mac's boot script then failed with
+  `cp: /Users/blake.guest/.lima-user-script: No such file`. r9 symlinks instead.
+- `killall loginwindow` after writing kcpassword does **not** log the user in on 27.2
+  (the screenshot still showed the login window); the same kcpassword logged in on
+  the next boot. r9 drops the `killall`.
+
+**Verified** on far-star with `make rebuild-27` (macOS 27.2 host and guest): the home
+moved about 5 s into the first boot and the VM was READY about 20 s later; the second
+boot auto-logged in with no first-login screens. In the guest: uid 501 `blake`, full
+name from the host, `NFSHomeDirectory` and `$HOME` `/Users/blake.guest`, no
+`/Users/blake`; SecureToken enabled and `fdesetup list` shows `blake`; the login
+keychain unlocks with `~/password`; no preferences point at the old path;
+passwordless sudo; the `macOS_27` runner registered from `/Users/blake.guest` and
+netatalk CI passed on it.
+
+**Side effect:** on the first boot `configure.sh`'s user `defaults write` steps log
+`Could not write domain` (no user session yet). Non-fatal; they run cleanly on the
+second boot.
+
+**Watching the console:** `limactl screenshot macos-27 -o out.png` works on 27.2 as
+long as the limactl app isn't hidden (Cmd-H gives "no data"); unhide its window first.
 
 ## Open questions
 
