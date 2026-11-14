@@ -166,10 +166,13 @@ network-26:
 
 # ── macOS 27 ──────────────────────────────────────────────────────────────────
 
-# The account is created by Apple's native first-boot provisioning (see macos-27.yaml):
-# The account is named after the host user (user.name in macos-27.yaml), full name from the host, home in
-# /Users/<host user>. The initial password is random per run (PROVISION_PASSWORD)
-# and is replaced by MACOS_PASSWORD (set_password) when that is exported.
+# The account is created by Apple's native first-boot provisioning (see macos-27.yaml).
+# It is named after the host user, with the full name from the host. Setup Assistant
+# creates the home at /Users/<host user>; lima-devl's guest agent moves it to
+# /Users/<host user>.guest before the first login, so the first boot stops at the login
+# window and auto-login starts from the second boot. The initial password is random per
+# run (PROVISION_PASSWORD) and is replaced by MACOS_PASSWORD (set_password) when that is
+# exported.
 
 build-27:
 	@# limactl disables yq env operators (strenv), so expand in the shell and pass

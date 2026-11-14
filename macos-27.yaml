@@ -48,10 +48,9 @@ containerd:
   system: false
   user: false
 
-# Name the provisioned account like the host user (and like the 15/26 VMs). lima-devl's
-# default for provisioned accounts is <host user>.guest so the home cannot clash with a
-# mounted host home; nothing here mounts one, so the plain name is fine. Setup Assistant
-# creates the home as /Users/blake.
+# Name the provisioned account like the host user (and like the 15/26 VMs). Setup
+# Assistant creates the home as /Users/blake; lima-devl's guest agent then moves it to
+# user.home (default /Users/blake.guest, as on the 15/26 VMs) before the first login.
 user:
   name: blake
 
