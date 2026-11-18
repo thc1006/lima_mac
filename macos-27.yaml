@@ -1,23 +1,20 @@
 # Lima configuration for macOS 27 guest VM
 #
-# The account is created by Apple's native first-boot provisioning
-# (VZMacGuestProvisioningOptions, from the lima-devl P1 patch) instead of Lima's fake
-# cloud-init, so this needs a macOS 27 host AND guest. The host-side tweaks (wallpaper,
-# energy settings, TCC) are applied by tools/macos-setup after the build.
+# On a macOS 27 host, lima-devl (P1 patch) has Apple's first-boot guest provisioning
+# (VZMacGuestProvisioningOptions) create the account instead of Lima's fake cloud-init;
+# nothing in this file configures it. The host-side tweaks (wallpaper, energy settings,
+# TCC) are applied by tools/macos-setup after the build.
 #
 # Requirements:
 #   - Apple Silicon Mac (aarch64) — macOS guests only run on native arch via VZ
-#   - macOS 27 host AND guest (provisioning is skipped with a warning otherwise)
+#   - macOS 27 host for guest provisioning (older hosts fall back to fake cloud-init)
 #   - lima-devl with the P1 guest provisioning patch
 #
-# Usage (the initial password is never stored in this public repo; make picks a random
-# one; if MACOS_PASSWORD is exported, make sets it as the account password afterwards):
+# Usage (Lima generates the initial password and keeps it in the guest's ~/password; if
+# MACOS_PASSWORD is exported, make sets it as the account password afterwards):
 #   make rebuild-27
 # or by hand:
-#   limactl create --name=macos-27 \
-#     --set '.osOpts.Darwin.guestProvisioning.password = "..."' \
-#     ./macos-27.yaml
-#   (limactl disables yq's strenv(), so the value must be a literal string.)
+#   limactl create --name=macos-27 ./macos-27.yaml
 #   limactl start macos-27
 #
 # Apple Software License Agreement applies:
@@ -129,14 +126,9 @@ vmOpts:
 osOpts:
   Darwin:
     suppressFirstLoginSetup: true
-    # Native first-boot account provisioning (macOS 27 host + guest, lima-devl P1).
-    # macOS applies this only on the first boot after install, so it takes effect
-    # on a fresh create, never on an existing instance. The account is named by user.name
-    # (blake, set above) with the host user's full name (user.comment); Setup Assistant
-    # creates its home at /Users/<user.name>. Only the initial password is set, at create time (see Usage above).
-    guestProvisioning:
-      logsInAutomatically: true
-      enablesRemoteLogin: true
+    # Automatic login (lima-devl A1), turned on when the account is created, so it takes
+    # effect from the second boot; the runner needs a GUI session.
+    autoLogin: true
 
 # Nested virtualisation lets you run another hypervisor inside this VM.
 # Requires Apple M3 or later.
@@ -146,8 +138,8 @@ osOpts:
 
 provision:
   # Sudo askpass helper — required by any provision script that needs sudo.
-  # Lima stores the guest password at ~/password (here the provisioning password,
-  # i.e. /Users/${USER}/password). This script reads it so that
+  # Lima randomly generates the guest password and stores it at ~/password
+  # (i.e. /Users/${USER}.guest/password). This script reads it so that
   # SUDO_ASKPASS can supply the password non-interactively.
   # The guest password should be changed after first login.
   - mode: data
@@ -200,4 +192,4 @@ message: |
     limactl shell {{.Name}} dscl . -read /Users/${USER} RealName NFSHomeDirectory
 
   Read the account's GUI session password:
-    limactl shell {{.Name}} cat /Users/${USER}/password
+    limactl shell {{.Name}} cat /Users/${USER}.guest/password

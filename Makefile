@@ -44,14 +44,6 @@ $(MACOS_SETUP): $(wildcard tools/macos-setup/*.go) tools/macos-setup/go.mod
 # builds when only configure.sh changes need to be validated).
 SKIP_MACPORTS   ?= 0
 
-# Initial password of the account provisioned in macos-27 (kept in the guest's ~/password),
-# like the random one Lima generates for 15/26. Random per run unless set. If MACOS_PASSWORD
-# is exported (e.g. from .envrc) every build sets it as the account password at the end.
-ifndef PROVISION_PASSWORD
-PROVISION_PASSWORD := $(shell openssl rand -base64 18 | tr -d '/+=' | cut -c1-16)
-endif
-export PROVISION_PASSWORD
-
 # ── Instance definitions ──────────────────────────────────────────────────────
 
 INSTANCE_26      := macos-26
@@ -166,21 +158,15 @@ network-26:
 
 # ── macOS 27 ──────────────────────────────────────────────────────────────────
 
-# The account is created by Apple's native first-boot provisioning (see macos-27.yaml).
-# It is named after the host user, with the full name from the host. Setup Assistant
-# creates the home at /Users/<host user>; lima-devl's guest agent moves it to
-# /Users/<host user>.guest before the first login, so the first boot stops at the login
-# window and auto-login starts from the second boot. The initial password is random per
-# run (PROVISION_PASSWORD) and is replaced by MACOS_PASSWORD (set_password) when that is
-# exported.
+# On a macOS 27 host, lima-devl has Apple's first-boot guest provisioning create the
+# account (see macos-27.yaml): named after the host user, with the full name from the
+# host. Setup Assistant creates the home at /Users/<host user>; lima-devl's guest agent
+# moves it to /Users/<host user>.guest before the first login. Lima generates the initial
+# password (~/password) and turns on auto-login with it (osOpts.Darwin.autoLogin, lima-devl
+# A1); set_password replaces it with MACOS_PASSWORD when that is exported.
 
 build-27:
-	@# limactl disables yq env operators (strenv), so expand in the shell and pass
-	@# yq string literals, escaping backslashes and double quotes.
-	q() { printf '"%s"' "$$(printf '%s' "$$1" | sed 's/[\\"]/\\&/g')"; }; \
-	$(LIMACTL) create --tty=false --name=$(INSTANCE_27) \
-		--set ".osOpts.Darwin.guestProvisioning.password = $$(q "$$PROVISION_PASSWORD")" \
-		$(CONFIG_27)
+	$(LIMACTL) create --tty=false --name=$(INSTANCE_27) $(CONFIG_27)
 	$(LIMACTL) start $(INSTANCE_27)
 	$(LIMACTL) stop $(INSTANCE_27)
 	$(LIMACTL) start $(INSTANCE_27)
@@ -376,4 +362,3 @@ help:
 	@echo "  XCODE_XIP_15=$(XCODE_XIP_15)  XCODE_XIP_14=$(XCODE_XIP_14)   (Xcode .xip in lima_mac/xcode/; empty = CLT only)"
 	@echo "  SKIP_OS_UPDATE=$(SKIP_OS_UPDATE)   (1 = skip the OS software update check)"
 	@echo "  SKIP_MACPORTS=$(SKIP_MACPORTS)    (1 = skip developertools.sh and macports.sh)"
-	@echo "  PROVISION_PASSWORD (build-27 initial account password; random per run if unset, kept in the guest's ~/password)"
