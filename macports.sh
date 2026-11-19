@@ -91,25 +91,12 @@ install_macports() {
 configure_macports() {
     export PATH="/opt/local/bin:/opt/local/sbin:$PATH"
 
-    # archive_sites.conf — prefer fcix and MIT mirrors
-    if ! grep -q "fcix" /opt/local/etc/macports/archive_sites.conf 2>/dev/null; then
-        log_info "Configuring archive_sites.conf..."
-        sudo tee /opt/local/etc/macports/archive_sites.conf <<'EOF'
-# MacPorts binary archive sources
+    # archive_sites.conf is left stock: its official mirror list (Fastly,
+    # the origin, fcix, ...) is ordered by preferred_hosts below.
 
-name                    macports_archives
-
-name                    fcix
-urls                    https://mirror.fcix.net/macports/packages/
-
-name                    mit
-urls                    http://bos.us.packages.macports.org/
-EOF
-    else
-        log_info "archive_sites.conf already configured — skipping"
-    fi
-
-    # macports.conf — set preferred mirror and applications_dir
+    # macports.conf — mirror order and applications_dir. fcix first (fast);
+    # Fastly next, which has every file the origin has, including ones fcix
+    # hasn't copied yet (blakeports scripts/setmirrors, Trac #65160).
     if ! grep -q "fcix" /opt/local/etc/macports/macports.conf 2>/dev/null; then
         log_info "Configuring macports.conf..."
         sudo tee -a /opt/local/etc/macports/macports.conf <<'EOF'
@@ -117,7 +104,7 @@ EOF
 # Lima runner configuration
 applications_dir        /Applications/MacPorts
 frameworks_dir          /opt/local/Library/Frameworks
-host_blacklist          packages.macports.org distfiles.macports.org rsync.macports.org
+host_blacklist          rsync.macports.org
 preferred_hosts         mirror.fcix.net
 EOF
     else

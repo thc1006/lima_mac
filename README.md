@@ -246,10 +246,11 @@ What it does:
 2. **MacPorts** — downloads the binary `.pkg` from the GitHub releases API matching the
    current macOS major version (`MacPorts-X.Y.Z-<MAJOR>-<Codename>.pkg`). Falls back to
    building from source tarball if no PKG is found for the running macOS version
-3. **macports.conf** — appends `applications_dir`, `host_blacklist`, and `preferred_hosts`
-   (fcix mirror)
-4. **archive_sites.conf** — configures fcix and MIT binary archive mirrors
-5. **`port selfupdate`** — syncs the ports tree
+3. **macports.conf** — appends `applications_dir`, `preferred_hosts mirror.fcix.net` and
+   `host_blacklist rsync.macports.org`: fcix is tried first, then Fastly
+   (packages/distfiles.macports.org), which has every file the origin has.
+   `archive_sites.conf` stays stock
+4. **`port selfupdate`** — syncs the ports tree
 
 > **Note:** `sources.conf` is intentionally left alone by `macports.sh`. It is configured at
 > workflow run time by `blakeports/scripts/installmacports`, which points it to the GitHub
