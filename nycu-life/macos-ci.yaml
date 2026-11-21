@@ -19,3 +19,5 @@ os: Darwin
 arch: aarch64
 # vz is the only supported VM type for macOS guests
 vmType: vz
+video:
+  display: default

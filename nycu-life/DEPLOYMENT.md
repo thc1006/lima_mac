@@ -82,6 +82,11 @@ macOS host (26.5 / 25F71, M4, 16 GB, FileVault OFF)
 9. **iOS Simulator runtime is not bundled:** `sudo xcodebuild -downloadPlatform iOS` (~8.5 GB, 26.5).
 10. **Disk:** the guest instance is ~39 GB; the IPSW download cache (~18 GB each) is only needed to
     CREATE the guest — delete `~/Library/Caches/lima/download/*` afterwards to reclaim it.
+11. **Keep the virtual display enabled:** use `video.display: default` in the golden and its clones.
+    In [Lima 2.2](https://github.com/lima-vm/lima/blob/v2.2.0/pkg/driver/vz/vm_darwin.go#L630),
+    `none` removes the Mac graphics device; it does not just hide a window. On the upgraded
+    macOS 27.2.1 host, a macOS 26.5 clone reached SSH with `default` after `none` starts failed.
+    SSH readiness does not establish a logged-in guest desktop or completed Setup Assistant.
 
 ## Deploy (ordered; run from the host over SSH, `PATH=/opt/homebrew/bin`)
 1. **Host:** Lima ≥ 2.2.0, FileVault off, auto-login + `pmset` (`scripts/host-setup.sh`).
