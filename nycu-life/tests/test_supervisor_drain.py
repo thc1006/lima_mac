@@ -38,7 +38,7 @@ class SupervisorDrainTests(unittest.TestCase):
                 'ioreg': 'exit 0\n',
                 'gh': '''printf 'gh %s\\n' "$*" >> "$FIXTURE/events"
 case "$*" in
-  *generate-jitconfig*) touch "$FIXTURE/consumed"; printf 'disposable-jit\\n';;
+  *generate-jitconfig*) touch "$FIXTURE/consumed"; printf '%s\\n' '{"encoded_jit_config":"eyIucnVubmVyIjoiZTMwPSJ9"}';;
   *runs/101/jobs*)
     if [ "$LOOKUP_DRAIN" = 1 ]; then touch "$DRAIN_FILE"; fi
     printf 'Native iOS\\n';;

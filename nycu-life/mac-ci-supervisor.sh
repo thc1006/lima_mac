@@ -119,10 +119,41 @@ provision_and_run() {
     [ "$delete_rc" -eq 0 ] || log "[cleanup] delete FAILED inst=$inst rc=$delete_rc"
     return 1
   }
-  jit=$(gh_api -X POST "repos/$REPO/actions/runners/generate-jitconfig" \
-        -f name="$inst" -F runner_group_id=1 -f "labels[]=$LABEL" -f work_folder=_work \
-        --jq '.encoded_jit_config' 2>/dev/null)
-  if [ -z "$jit" ]; then
+  # A failed API request or malformed config must never reach run.sh. Keep the
+  # opaque credential-bearing response on the pipe, not in logs or argv.
+  if ! jit=$(
+    set -o pipefail
+    gh_api -X POST "repos/$REPO/actions/runners/generate-jitconfig" \
+      -f name="$inst" -F runner_group_id=1 -f "labels[]=$LABEL" -f work_folder=_work 2>/dev/null |
+      python3 -c '
+import base64, json, sys
+
+def decoded(value):
+    if type(value) is not str:
+        raise ValueError()
+    encoded = value.encode("ascii")
+    raw = base64.b64decode(encoded, validate=True)
+    if base64.b64encode(raw) != encoded:
+        raise ValueError()
+    return raw
+
+try:
+    response = json.load(sys.stdin)
+    value = response.get("encoded_jit_config") if type(response) is dict else None
+    if type(value) is not str or not value:
+        raise ValueError()
+    configuration = json.loads(decoded(value).decode("utf-8"))
+    if type(configuration) is not dict or not configuration:
+        raise ValueError()
+    for name, content in configuration.items():
+        if type(name) is not str:
+            raise ValueError()
+        decoded(content)
+except (ValueError, TypeError, UnicodeError):
+    sys.exit(1)
+sys.stdout.write(value)
+'
+  ); then
     log "jitconfig failed"
     limactl stop -f "$inst" 2>/dev/null; stop_rc=$?
     limactl delete -f "$inst" 2>/dev/null; delete_rc=$?
@@ -162,6 +193,7 @@ while true; do
     if provision_and_run; then :; else
       lifecycle_rc=$?
       log "[lifecycle] FAILED rc=$lifecycle_rc"
+      sleep "$POLL"
     fi
   else sleep "$POLL"; fi
 done
