@@ -427,9 +427,21 @@ EOF
     # matching previous build → isNewUserAccount=false → MiniBuddyLaunchReason stays 0.
     local SA_PRESEED_SCRIPT="/usr/local/sbin/lima-sa-preseed.sh"
     local SA_PRESEED_PLIST="/Library/LaunchDaemons/com.lima.sa-preseed.plist"
-    local USER_SA_PLIST="$HOME/Library/Preferences/com.apple.SetupAssistant.plist"
+    # Capture the provisioning user before this script runs as root on later boots.
+    local USER_SA_UID USER_SA_GID USER_HOME_LITERAL
+    USER_SA_UID=$(/usr/bin/id -u) || return 1
+    USER_SA_GID=$(/usr/bin/id -g) || return 1
+    if ! [[ "$USER_SA_UID" =~ ^[0-9]+$ && "$USER_SA_GID" =~ ^[0-9]+$ ]]; then
+        log_error "Cannot determine the guest's numeric UID and GID"
+        return 1
+    fi
+    # Quote the home once so the generated POSIX script keeps its path literal.
+    USER_HOME_LITERAL=${HOME//\'/\'\\\'\'}
     sudo tee "$SA_PRESEED_SCRIPT" > /dev/null << SCRIPT
 #!/bin/sh
+GUEST_UID=${USER_SA_UID}
+GUEST_GID=${USER_SA_GID}
+GUEST_HOME='${USER_HOME_LITERAL}'
 BUILD=\$(sw_vers -buildVersion 2>/dev/null)
 VERSION=\$(sw_vers -productVersion 2>/dev/null)
 [ -n "\$BUILD" ]   || exit 0
@@ -442,17 +454,15 @@ if [ "\$MAJOR_VERSION" -ge 27 ] 2>/dev/null; then
     # ensures the agent caches 5400 and ISRootMigrator does not trigger the SA Apple Account dialog.
     # The SA plist may not exist yet (it's written by configure.sh later via SSH), so this
     # block intentionally runs before the SA plist check below.
-    GUEST_UID=\$(id -u blake 2>/dev/null)
-    GUEST_GID=\$(id -g blake 2>/dev/null)
     if [ -n "\$GUEST_UID" ]; then
-        GLOBAL_PREFS="/Users/blake.guest/Library/Preferences/.GlobalPreferences.plist"
+        GLOBAL_PREFS="\$GUEST_HOME/Library/Preferences/.GlobalPreferences.plist"
         /usr/libexec/PlistBuddy -c "Set :AppleLanguagesSchemaVersion 5400" "\$GLOBAL_PREFS" 2>/dev/null || \
             /usr/libexec/PlistBuddy -c "Add :AppleLanguagesSchemaVersion integer 5400" "\$GLOBAL_PREFS" 2>/dev/null || true
         [ -f "\$GLOBAL_PREFS" ] && chown "\${GUEST_UID}:\${GUEST_GID}" "\$GLOBAL_PREFS" 2>/dev/null || true
         [ -f "\$GLOBAL_PREFS" ] && chmod 600 "\$GLOBAL_PREFS" 2>/dev/null || true
     fi
 fi
-PLIST="${USER_SA_PLIST}"
+PLIST="\$GUEST_HOME/Library/Preferences/com.apple.SetupAssistant.plist"
 [ -f "\$PLIST" ]   || exit 0
 /usr/bin/defaults write "\$PLIST" MiniBuddyLaunchReason -int 0
 /usr/bin/defaults write "\$PLIST" MiniBuddyLaunchedPostMigration -bool false
@@ -480,8 +490,6 @@ MANAGED_PLIST="/Library/Preferences/com.apple.SetupAssistant.managed.plist"
 # Restore plist ownership: defaults write (root) atomically replaces the file,
 # changing ownership to root. cfprefsd agent (running as the user) cannot read
 # a root-owned 0600 file — it gets an empty SA domain and mini-buddy shows dialogs.
-GUEST_UID=\$(id -u blake 2>/dev/null)
-GUEST_GID=\$(id -g blake 2>/dev/null)
 [ -n "\$GUEST_UID" ] && chown "\${GUEST_UID}:\${GUEST_GID}" "\$PLIST" 2>/dev/null || true
 SCRIPT
     sudo chmod 755 "$SA_PRESEED_SCRIPT"
