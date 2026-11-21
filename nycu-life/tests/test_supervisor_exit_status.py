@@ -49,7 +49,7 @@ log() { printf '%s\\n' "$*"; }
 unlock_keychain() { printf 'unlock\\n' >> "$EVENTS"; }
 gh_api() {
   printf 'jit\\n' >> "$EVENTS"
-  [ "$MISSING_JIT" = 1 ] || printf 'synthetic-jit\\n'
+  [ "$MISSING_JIT" = 1 ] || printf '%s\\n' '{"encoded_jit_config":"eyIucnVubmVyIjoiZTMwPSJ9"}'
 }
 limactl() {
   printf '%s\\n' "$1" >> "$EVENTS"
@@ -151,9 +151,9 @@ sleep() { printf 'sleep\\n' >> "$EVENTS"; exit 99; }
         status, output, events = self.invoke(loop=True, runner=17)
         self.assertEqual(status, 99)
         self.assertIn('[lifecycle] FAILED rc=17', output)
-        self.assertEqual(events.count('queued'), 2)
+        self.assertEqual(events.count('queued'), 1)
         self.assertEqual(events.count('shell'), 1)
-        self.assertEqual(events[-4:], ['stop', 'delete', 'queued', 'sleep'])
+        self.assertEqual(events[-3:], ['stop', 'delete', 'sleep'])
 
     def test_start_failure_logs_failed_delete_without_adding_stop(self):
         status, output, events = self.invoke(start=4, delete=6)
