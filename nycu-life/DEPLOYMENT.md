@@ -131,12 +131,13 @@ launchctl enable    gui/$U/com.nycu-life.mac-ci-supervisor
 # Drain an installed service before restarting it; see the procedure below.
 launchctl print    gui/$U/com.nycu-life.mac-ci-supervisor | grep -E 'state =|pid ='
 ```
-Install `unlock-keychain.py` beside `~/ci/mac-ci-supervisor.sh` when replacing the
-supervisor at a drained, idle boundary. It requires the host's existing Python 3
-and uses only its standard library. Keep `~/ci/.kc_pw` a regular, owner-only file
+Install `unlock-keychain.py` and `preserve-failed-instance.py` beside
+`~/ci/mac-ci-supervisor.sh` when replacing the supervisor at a drained, idle
+boundary. Both helpers use the host's existing Python 3 standard library.
+Keep `~/ci/.kc_pw` a regular, owner-only file
 (mode `600` or `400`, one link, at most 1024 bytes); symlinks, changed metadata,
-embedded terminal control characters and empty passwords fail closed. The helper
-allows one prompt response within 15 seconds, discards native output and reports
+embedded terminal control characters and empty passwords fail closed. The unlock
+helper allows one prompt response within 15 seconds, discards native output and reports
 only a generic failure. It inherits the supervisor's security audit session and
 does not change keychain settings, the default keychain or the search list.
 

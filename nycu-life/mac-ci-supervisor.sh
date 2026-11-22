@@ -162,11 +162,19 @@ sys.stdout.write(value)
     return 1
   fi
   log "[run] one job in $inst"
-  limactl shell "$inst" -- bash -lc "cd ~/actions-runner && ./run.sh --jitconfig '$jit'" 2>&1 | sed "s/^/  [$inst] /"
+  # Use an independent SSH transport so a dead guest reaches cleanup.
+  SSH='/usr/bin/ssh -o ControlMaster=no -o ControlPath=none -o ControlPersist=no -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o ConnectTimeout=10' \
+    limactl shell "$inst" -- bash -lc "cd ~/actions-runner && ./run.sh --jitconfig '$jit'" 2>&1 | sed "s/^/  [$inst] /"
   pipeline_rc=("${PIPESTATUS[@]}")
   runner_rc=${pipeline_rc[0]}; writer_rc=${pipeline_rc[1]}
   [ "$runner_rc" -eq 0 ] || log "[run] runner FAILED inst=$inst rc=$runner_rc"
   [ "$writer_rc" -eq 0 ] || log "[run] log writer FAILED inst=$inst rc=$writer_rc"
+  if [ "$runner_rc" -ne 0 ] || [ "$writer_rc" -ne 0 ]; then
+    # Preserve small instance-local Host logs before stop/delete removes them.
+    # A failed observation must not block cleanup or replace the original rc.
+    python3 "$SUPERVISOR_DIR/preserve-failed-instance.py" "$inst" "$runner_rc" "$writer_rc" \
+      || log "[evidence] capture FAILED inst=$inst; cleanup continues"
+  fi
   log "[cleanup] destroy $inst"
   limactl stop -f "$inst" 2>/dev/null; stop_rc=$?
   limactl delete -f "$inst" 2>/dev/null; delete_rc=$?
