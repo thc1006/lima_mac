@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run extracted production provisioning/loop code with offline command doubles."""
 import argparse
+import json
 import os
 from pathlib import Path
 import re
@@ -33,7 +34,8 @@ def extract_function(text, name):
 @unittest.skipUnless(os.name == 'posix' and BASH, 'requires a POSIX Bash host')
 class SupervisorExitStatusTests(unittest.TestCase):
     def invoke(self, *, runner=0, writer=0, stop=0, delete=0,
-               start=0, missing_jit=False, drain=False, loop=False, queued=True):
+               start=0, missing_jit=False, drain=False, loop=False, queued=True,
+               harvest=0, record_harvest=False, ssh_observations=None, inherited_ssh=None):
         text = SOURCE.read_text()
         with tempfile.TemporaryDirectory(prefix='sa-supervisor-status-') as folder:
             directory = Path(folder)
@@ -45,6 +47,17 @@ GOLDEN=macos-ci
 REPO=fixture/repository
 LABEL=fixture-macos
 POLL=.01
+SUPERVISOR_DIR="$HARVEST_FIXTURE_DIR"
+python3() {
+  case "$1" in
+    "$SUPERVISOR_DIR/preserve-failed-instance.py")
+      [ "$#" -eq 4 ] || return 97
+      if [ "$RECORD_HARVEST" = 1 ]; then printf 'harvest:%s:%s\\n' "$3" "$4" >> "$EVENTS"; fi
+      return "$HARVEST_RC";;
+    -c) "$TEST_PYTHON" "$@";;
+    *) return 98;;
+  esac
+}
 log() { printf '%s\\n' "$*"; }
 unlock_keychain() { printf 'unlock\\n' >> "$EVENTS"; }
 gh_api() {
@@ -53,6 +66,7 @@ gh_api() {
 }
 limactl() {
   printf '%s\\n' "$1" >> "$EVENTS"
+  if [ "$RECORD_SSH" = 1 ]; then "$TEST_PYTHON" "$SSH_OBSERVER" "$@" || return 98; fi
   case "$1" in
     clone) return 0;;
     start) return "$START_RC";;
@@ -87,13 +101,24 @@ sleep() { printf 'sleep\\n' >> "$EVENTS"; exit 99; }
             executable = directory / 'extracted-supervisor.sh'
             executable.write_text(code)
             events = directory / 'events'
-            env = dict(os.environ, EVENTS=str(events), DRAIN_FILE=str(request),
+            ssh_log = directory / 'ssh-observations.jsonl'
+            observer = directory / 'observe-ssh.py'
+            if ssh_observations is not None:
+                observer.write_text("import json,os,shlex,sys\nvalue=os.environ.get('SSH')\nrow={'action':sys.argv[1],'argv':sys.argv[1:],'SSH':value,'parsed_SSH':None if value is None else shlex.split(value)}\nwith open(os.environ['SSH_OBSERVATIONS'],'a') as stream:stream.write(json.dumps(row)+'\\n')\n")
+            env = dict(PATH=os.defpath, LC_ALL='C', EVENTS=str(events), DRAIN_FILE=str(request),
                        CONSUMED=str(directory / 'consumed'), RUNNER_RC=str(runner),
                        WRITER_RC=str(writer), STOP_RC=str(stop), DELETE_RC=str(delete),
                        START_RC=str(start), MISSING_JIT='1' if missing_jit else '0',
-                       QUEUED='1' if queued else '0')
+                       QUEUED='1' if queued else '0', HARVEST_FIXTURE_DIR=str(directory),
+                       HARVEST_RC=str(harvest), RECORD_HARVEST='1' if record_harvest else '0',
+                       TEST_PYTHON=sys.executable, RECORD_SSH='1' if ssh_observations is not None else '0',
+                       SSH_OBSERVER=str(observer), SSH_OBSERVATIONS=str(ssh_log))
+            if inherited_ssh is not None:
+                env['SSH'] = inherited_ssh
             process = subprocess.run([BASH, str(executable)], env=env,
                                      capture_output=True, text=True, timeout=5)
+            if ssh_observations is not None and ssh_log.exists():
+                ssh_observations.extend(json.loads(line) for line in ssh_log.read_text().splitlines())
             return process.returncode, process.stdout, events.read_text().splitlines() if events.exists() else []
 
     def completed(self, expected, **options):
