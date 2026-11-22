@@ -54,7 +54,14 @@ fixture_id() {
 /usr/bin/id() { fixture_id "$@"; }
 id() { fixture_id "$@"; }
 /usr/bin/defaults() { record defaults "$@"; }
-/usr/libexec/PlistBuddy() { record PlistBuddy "$@"; }
+/usr/libexec/PlistBuddy() {
+    record PlistBuddy "$@"
+    case "$2" in
+        'Set :AppleLanguagesSchemaVersion 5400') return "$PLISTBUDDY_SET_STATUS";;
+        'Add :AppleLanguagesSchemaVersion integer 5400') return "$PLISTBUDDY_ADD_STATUS";;
+        *) return 96;;
+    esac
+}
 chown() { record chown "$@"; }
 chmod() { record chmod "$@"; }
 sw_vers() {
@@ -79,7 +86,8 @@ class PreseedOwnershipTests(unittest.TestCase):
     def invoke(self, directory, *, version='27.1', uid='703', gid='204',
                uid_status=0, gid_status=0, spaces=False, boot=True,
                legacy_account=False, user_plist=True, home_name=None,
-               legacy_uid='666', legacy_gid='777'):
+               legacy_uid='666', legacy_gid='777', plistbuddy_set_status=0,
+               plistbuddy_add_status=0):
         root = Path(directory)
         guest = root / (home_name if home_name is not None else
                         ('non blake guest home' if spaces else 'non-blake-guest'))
@@ -109,7 +117,9 @@ class PreseedOwnershipTests(unittest.TestCase):
             'CALLER_UID': uid, 'CALLER_GID': gid, 'UID_STATUS': str(uid_status),
             'GID_STATUS': str(gid_status), 'BOOT_VERSION': version, 'RUN_BOOT': '1' if boot else '0',
             'LEGACY_ACCOUNT_EXISTS': '1' if legacy_account else '0',
-            'LEGACY_UID': legacy_uid, 'LEGACY_GID': legacy_gid}
+            'LEGACY_UID': legacy_uid, 'LEGACY_GID': legacy_gid,
+            'PLISTBUDDY_SET_STATUS': str(plistbuddy_set_status),
+            'PLISTBUDDY_ADD_STATUS': str(plistbuddy_add_status)}
         process = subprocess.run([BASH, '--noprofile', '--norc', str(script)], env=environment,
                                  stdin=subprocess.DEVNULL, capture_output=True, timeout=5)
         parsed = [tuple(part.decode('utf-8') for part in line.split(b'\0')[:-1])
@@ -203,6 +213,18 @@ class PreseedOwnershipTests(unittest.TestCase):
             self.assertEqual([event for event in events if event[0] == 'chown'],
                              [('chown', '703:204', str(global_preferences))])
             self.assertFalse(any(event[0] == 'defaults' for event in events))
+
+    def test_set_failure_add_success_restores_global_preferences_owner(self):
+        with tempfile.TemporaryDirectory() as directory:
+            process, events, _, _, global_preferences = self.invoke(
+                directory, plistbuddy_set_status=1, plistbuddy_add_status=0)
+            self.assertEqual(process.returncode, 0, process.stderr.decode())
+            set_event = ('PlistBuddy', '-c', 'Set :AppleLanguagesSchemaVersion 5400', str(global_preferences))
+            add_event = ('PlistBuddy', '-c', 'Add :AppleLanguagesSchemaVersion integer 5400', str(global_preferences))
+            self.assertEqual([event for event in events if event[0] == 'PlistBuddy'], [set_event, add_event])
+            owner = ('chown', '703:204', str(global_preferences))
+            self.assertIn(owner, events)
+            self.assertLess(events.index(add_event), events.index(owner))
 
 
 if __name__ == '__main__':
