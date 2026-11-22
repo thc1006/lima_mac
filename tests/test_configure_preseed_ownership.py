@@ -126,6 +126,15 @@ class PreseedOwnershipTests(unittest.TestCase):
                     if version.startswith('27.'):
                         expected.insert(0, ('chown', uid + ':' + gid, str(global_preferences)))
                     self.assertEqual([event for event in events if event[0] == 'chown'], expected)
+                    sa_writes = [index for index, event in enumerate(events)
+                                 if event[:3] == ('defaults', 'write', str(sa))]
+                    self.assertTrue(sa_writes, 'the user plist must be written before restoring ownership')
+                    self.assertLess(max(sa_writes), events.index(('chown', uid + ':' + gid, str(sa))))
+                    if version.startswith('27.'):
+                        global_writes = [index for index, event in enumerate(events)
+                                         if event[0] == 'PlistBuddy' and event[-1] == str(global_preferences)]
+                        self.assertTrue(global_writes, 'global preferences must be written before restoring ownership')
+                        self.assertLess(max(global_writes), events.index(('chown', uid + ':' + gid, str(global_preferences))))
 
     def test_rendered_paths_keep_guest_home_with_spaces_when_boot_home_is_root(self):
         with tempfile.TemporaryDirectory() as directory:
